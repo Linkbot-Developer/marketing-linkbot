@@ -1,0 +1,3 @@
+Inter: https://fonts.google.com/specimen/Inter
+Manrope: https://fonts.google.com/specimen/Manrope
+These are recommended working fonts, not verified official Linkbot fonts. Font binaries are not included; consult the font licence before redistribution.

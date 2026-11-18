@@ -1,0 +1,8 @@
+LINKBOT BRAND COLOUR REFERENCE
+Status: OFFICIAL — confirmed by Linkbot marketing, 18 November 2026.
+
+Navy:  #172B4D — dark backgrounds, headings, strong text
+Blue:  #12488B — logo on light backgrounds, primary accent
+White: #FFFFFF — backgrounds, logo on dark backgrounds
+
+Do not introduce other colours without approval.

@@ -1,0 +1,27 @@
+LINKBOT TYPOGRAPHY REFERENCE
+
+Verification status:
+The exact typeface and font weights used on linkbot.sg have not been confirmed from the available source material. The fonts below are recommendations for a consistent working identity, not confirmed official brand fonts.
+
+Recommended working family: Inter
+- Headlines: Inter SemiBold / Bold
+- Body copy: Inter Regular
+- UI labels: Inter Medium
+- Numeric / dashboard content: Inter Medium
+Download: https://fonts.google.com/specimen/Inter
+
+Alternative: Manrope
+- Use if a slightly more geometric, contemporary tone is preferred.
+Download: https://fonts.google.com/specimen/Manrope
+
+Fallback stack:
+Inter, Arial, Helvetica, sans-serif
+
+Suggested type scale:
+- Display / hero: 36–48 pt, Bold
+- Section heading: 22–28 pt, SemiBold
+- Subheading: 14–18 pt, SemiBold
+- Body: 10–12 pt, Regular
+- Caption: 8–9 pt, Regular
+
+Font files are not bundled. Download from Google Fonts and retain the relevant licence notices when redistributing.
