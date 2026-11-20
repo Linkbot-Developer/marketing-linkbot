@@ -1,0 +1,16 @@
+{
+  "name": "marketing-linkbot",
+  "private": true,
+  "type": "module",
+  "description": "Linkbot marketing automation: scripts and tooling",
+  "scripts": {
+    "check": "node scripts/check-connections.mjs",
+    "lark:login": "node scripts/lark-mcp.mjs login"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.11.0"
+  }
+}

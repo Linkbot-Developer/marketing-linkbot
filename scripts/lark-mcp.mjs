@@ -30,7 +30,12 @@ const tools = [
   'wiki.v2.spaceNode.list', 'wiki.v2.spaceNode.create', 'wiki.v2.spaceNode.moveDocsToWiki', 'wiki.v2.spaceNode.updateTitle',
 ].join(',');
 if (mode === 'mcp') args.push('--oauth', '--token-mode', 'user_access_token', '-t', tools);
+// Extra flags after "login" are passed through, e.g. --scope "drive:drive wiki:wiki"
+if (mode === 'login') args.push(...process.argv.slice(3));
 
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-const child = spawn(npx, args, { stdio: 'inherit', shell: process.platform === 'win32' });
+// Node 20 abandons each connection attempt after 250 ms ("happy eyeballs"), which causes
+// "Socket connection timeout" errors to Lark on slower networks. Turn that off for the child.
+const childEnv = { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --no-network-family-autoselection`.trim() };
+const child = spawn(npx, args, { stdio: 'inherit', shell: process.platform === 'win32', env: childEnv });
 child.on('exit', (code) => process.exit(code ?? 0));

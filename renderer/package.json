@@ -1,0 +1,16 @@
+{
+  "name": "linkbot-renderer",
+  "private": true,
+  "type": "module",
+  "description": "Renders Linkbot social media assets: images with overlays, carousels, Reels/TikToks and Stories",
+  "scripts": {
+    "smoke": "node scripts/smoke-test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "hyperframes": "^0.9.71",
+    "playwright": "^1.65.1"
+  }
+}

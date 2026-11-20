@@ -1,0 +1,51 @@
+# Lark Marketing Workspace
+
+Created 19 Nov 2026 on Linkbot's Lark (sglinkbot.sg.larksuite.com). These IDs are used by the automation (n8n) to file content.
+
+## Drive folders
+
+| Folder | Token | Link |
+|---|---|---|
+| Marketing | `WhAHfSUtOlQKFRd0NjilUQQEgeu` | https://sglinkbot.sg.larksuite.com/drive/folder/WhAHfSUtOlQKFRd0NjilUQQEgeu |
+| Marketing / Marketing Agents | `LpZNftVqJlKFRDd7Nt5lH5p9gLf` | https://sglinkbot.sg.larksuite.com/drive/folder/LpZNftVqJlKFRDd7Nt5lH5p9gLf |
+| Marketing / Social Media | `LhLvfwRp2lhOANdaHIglWWNagDg` | https://sglinkbot.sg.larksuite.com/drive/folder/LhLvfwRp2lhOANdaHIglWWNagDg |
+| Marketing / Social Media / FB | `W8EhfbrlLlCKrpdr9djlbIWDgaf` | https://sglinkbot.sg.larksuite.com/drive/folder/W8EhfbrlLlCKrpdr9djlbIWDgaf |
+| Marketing / Social Media / IG | `AWYEfOLANlLHmfdOWAzlnJLjguc` | https://sglinkbot.sg.larksuite.com/drive/folder/AWYEfOLANlLHmfdOWAzlnJLjguc |
+| Marketing / Social Media / LinkedIn | `Os5ff3XwKlImXQdkhxellH4NgRq` | https://sglinkbot.sg.larksuite.com/drive/folder/Os5ff3XwKlImXQdkhxellH4NgRq |
+| Marketing / Social Media / TikTok | `VWzqf6rzpldbQIdwVNxl7iRKgHd` | https://sglinkbot.sg.larksuite.com/drive/folder/VWzqf6rzpldbQIdwVNxl7iRKgHd |
+
+## Wiki: "Linkbot Marketing Wiki" (space `7709700631312748303`, private)
+
+| Page | Node token | Status |
+|---|---|---|
+**Current pages** (imported with content, 20 Nov 2026):
+
+| Page | Node token | Status |
+|---|---|---|
+| Marketing Home | `NjG8wA5GJil2KrknO8ZlLuKHg4c` | ✅ Filled |
+| ↳ Master Brief | `EPntwgz4ziGT33kQhFelMyFWg0e` | ✅ Filled (summary; PDF to upload) |
+| ↳ Brand Guide | `FfUgweBpYie0gckV06jlBpMZg1b` | ✅ Filled |
+| ↳ Audience, Offer & Goals | `RX7aw99N5isytxkU95jlizPpg4f` | ✅ Filled |
+| ↳ Competitors | `YqnVwnwhLibaBqkwaPelIUVtgXg` | ✅ Filled |
+| ↳ Content Workflow & Approvals | `UVe9wEtjSinSLXk1rzelFloHgLf` | ✅ Filled |
+| ↳ Marketing Automation System | `UNxCwmjxGiJGmhkQfatltZ5igGd` | ✅ Filled |
+
+**Old empty placeholders** (created 19 Nov, delete by hand in Lark; the MCP has no delete tool): "Marketing Home" `QjAAwgsY7iaFZakM7wpl3mYOgkh` and its 6 empty child pages.
+
+Page link format: `https://sglinkbot.sg.larksuite.com/wiki/<node token>`
+
+## Lark app permissions (user identity)
+
+| Permission | Status | Needed for |
+|---|---|---|
+| `drive:drive` | ✅ granted | Folders, files |
+| `wiki:wiki` | ✅ granted | Wiki space and pages |
+| `docx:document` | ✅ granted | Writing page content and content docs |
+| `offline_access` | ✅ granted | Staying logged in (automation) |
+| `bitable:app` | ❌ not enabled | Creating Base tables (Content, Settings, Reports, Leads) |
+
+Log in again after any permission change: `node scripts/lark-mcp.mjs login --scope drive:drive,wiki:wiki,docx:document,offline_access` (comma-separated, no spaces).
+
+## Still to do
+- Upload `brief/Master Brief - Linkbot.pdf` into the **Marketing** folder. The Lark MCP can't upload files, so drag it in by hand for now.
+- Fill the wiki pages once `docx:document` is enabled.

@@ -1,6 +1,8 @@
 # Linkbot — Marketing Context
 
 Use this file as the source of truth when writing or designing anything for Linkbot.
+
+> **Building the marketing automation system?** Read [`docs/marketing-system-spec.md`](docs/marketing-system-spec.md) first. It defines the flow, stack, data model, workflows, build phases and hard rules (approval-only publishing, pause switch, alerts, secrets in `.env` only). This file stays the source of truth for brand, tone, audience and compliance; the spec is the source of truth for how the system works.
 Sources: `brief/Master Brief - Linkbot.pdf` and `brand/` (brand kit, 16 Nov 2026).
 Items marked **[TBC]** are not confirmed. Do not present them as official.
 
@@ -181,8 +183,10 @@ Aims by channel:
 - Verify technical details before publishing tutorials or integration demos.
 - Follow third-party brand guidelines when using software logos.
 - **Content approver: marketing@linkbot.sg only.** Nothing goes live without approval, and unapproved posts are held, never published. Get a technical check on claims about capabilities or integrations.
-- **Automation (being designed):** see [docs/automation-design.md](docs/automation-design.md).
-  - n8n Cloud runs the flow, Claude writes the copy and Higgsfield makes images and video.
+- **Automation:** specified in [docs/marketing-system-spec.md](docs/marketing-system-spec.md). Earlier design notes are in [docs/automation-design.md](docs/automation-design.md).
+  - n8n runs the flow and Claude writes the copy and checks it.
+  - Images and video come from free and open-source tools: Gemini or Cloudflare images, HTML templates, HyperFrames and Edge TTS.
+  - n8n publishes through each platform's own API.
   - Lark Base holds the content calendar, CRM, results and settings, and Lark Drive holds the media.
   - Content is proposed at least 7 days before it posts.
   - Platforms: FB, IG, LinkedIn and TikTok, with the blog later.

@@ -18,3 +18,7 @@ venv/
 Thumbs.db
 desktop.ini
 .vscode/
+
+# Renderer output and sandboxes
+renderer/out/
+renderer/sandbox/

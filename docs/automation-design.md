@@ -1,5 +1,7 @@
 # Linkbot Marketing Automation — Design (draft v1, 18 Nov 2026)
 
+> **Superseded for system build by [marketing-system-spec.md](marketing-system-spec.md) (19 Nov 2026).** Kept as decision history. In particular, §8 (the paid Higgsfield, HeyGen and Creatomate stack) is now a *later-phase upgrade*; the current stack is free and open source.
+
 Goal: a mostly hands-off system that plans, generates, stores, gets approval for, publishes, measures and reports on Linkbot's social content. A human approves every post. Brand rules come from [`CLAUDE.md`](../CLAUDE.md).
 
 ## 1. Flow
@@ -85,7 +87,25 @@ Goal: a mostly hands-off system that plans, generates, stores, gets approval for
 | Accounts | Admin on new **test** accounts (FB, IG, LinkedIn, TikTok). The live company LinkedIn page comes after testing. |
 | Approver | marketing@linkbot.sg is a Lark user. It receives the approval cards. |
 
-## 8. Agent runtime options
+## 8. Media generation stack (recommended 18 Nov 2026)
+
+Decision: video and images are **AI-generated**, including an **AI presenter** for TikTok. Everything is labelled as AI on each platform.
+
+| Job | Recommended | Why | Fallback |
+|---|---|---|---|
+| AI images and B-roll video | **Higgsfield API** (one key covering 50+ models such as Kling, Veo and Seedance) | Already chosen; switch models without re-integrating | **fal.ai** (developer-focused, pay-per-use, many models) |
+| AI presenter (talking head) | **HeyGen API** (pay-as-you-go from US$5; separate from web plans) | Built for script-to-avatar video with lip-sync | Creatify; Higgsfield, if its avatar models fit |
+| Brand overlay, logo, captions, carousels, final render | **Creatomate** (JSON API, image and video templates) | Enforces the brand on every asset: Inter font, palette, logo corner, overlay text, end cards. Fits the "no text in AI media" rule. | **Placid** (cheaper, images and simple video) or **Shotstack** |
+
+**Pipeline:** Copywriter brief → Higgsfield (visuals) and/or HeyGen (presenter) → Creatomate template (overlay text, logo, captions, end card) → Lark Drive → Brand Checker → review.
+
+**Notes**
+- Higgsfield, HeyGen and Creatomate all bill API use separately from their web plans. Top up small amounts first and track the cost per post in the Settings dashboard.
+- One source says OpenAI's Sora API is being sunset in 2026, so don't build on it.
+- Platform AI labels: TikTok's posting API has an AI-generated flag, and Instagram has "AI info". Confirm the exact field names in the official API docs during the build.
+- Vendor prices vary by source and change often. Check each pricing page before committing.
+
+## 9. Agent runtime options
 
 - **n8n Cloud (current plan):** scheduled, auditable workflows. Each AI step calls the Claude API.
 - **Hermes Agent (Nous Research), suggested by a supervisor:** an open-source, self-hosted agent with cron, memory, skills, MCP and messaging gateways. It could act as the "brain" for planning and analysis, with n8n kept for the deterministic plumbing. See the chat of 18 Nov 2026 for the assessment. It isn't adopted yet.
