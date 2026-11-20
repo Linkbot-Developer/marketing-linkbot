@@ -1,0 +1,38 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+{{{theme}}}
+:root { --w: {{width}}px; --h: {{height}}px; }
+/* Kinds: title (navy), point (white), cta (blue) */
+.frame.title { background: var(--navy); }
+.frame.point { background: var(--white); }
+.frame.cta   { background: var(--blue); }
+.inner { position: absolute; left: 88px; right: 88px; top: 50%; transform: translateY(-54%); display: flex; flex-direction: column; gap: 34px; }
+.num { width: 108px; height: 108px; border-radius: 28px; background: var(--blue); color: var(--white);
+       font-size: 52px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.icon { font-size: 92px; line-height: 1; }
+h2 { font-size: 86px; }
+.title h2, .cta h2 { color: var(--white); }
+.point h2 { color: var(--navy); font-size: 74px; }
+p { font-size: 40px; }
+.title p, .cta p { color: var(--ink-soft); }
+.point p { color: #3A4A66; }
+.pill { align-self: flex-start; background: var(--white); color: var(--blue); font-weight: 700; font-size: 38px; padding: 26px 40px; border-radius: 999px; }
+.point .counter { color: var(--blue); }
+.swipe { position: absolute; right: 88px; top: 88px; font-size: 28px; font-weight: 600; color: var(--blue-soft); letter-spacing: .06em; }
+.point .swipe { color: var(--blue); }
+</style></head>
+<body><div class="frame {{kind}}">
+  {{{swipe}}}
+  <div class="inner">
+    {{{lead}}}
+    <h2 data-fit="{{headingMax}}">{{{heading}}}</h2>
+    {{{body}}}
+    {{{button}}}
+  </div>
+  <div class="counter">{{counter}}</div>
+  <img class="logo" src="{{{logo}}}" alt="">
+</div>
+<script>{{{fit}}}</script>
+</body></html>
