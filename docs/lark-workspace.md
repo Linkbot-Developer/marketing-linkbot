@@ -14,6 +14,27 @@ Created 19 Nov 2026 on Linkbot's Lark (sglinkbot.sg.larksuite.com). These IDs ar
 | Marketing / Social Media / LinkedIn | `Os5ff3XwKlImXQdkhxellH4NgRq` | https://sglinkbot.sg.larksuite.com/drive/folder/Os5ff3XwKlImXQdkhxellH4NgRq |
 | Marketing / Social Media / TikTok | `VWzqf6rzpldbQIdwVNxl7iRKgHd` | https://sglinkbot.sg.larksuite.com/drive/folder/VWzqf6rzpldbQIdwVNxl7iRKgHd |
 
+## Base: "Linkbot Marketing Automation" (in the Marketing folder)
+
+Link: https://sglinkbot.sg.larksuite.com/base/UnVYbyvm2anu0dsmiQ1lGpcsgRh · App token `UnVYbyvm2anu0dsmiQ1lGpcsgRh`
+
+| Table | ID | Contents |
+|---|---|---|
+| Content | `tblBUzCMudCo8xPZ` | One row per post: 44 fields (spec §4). 11 sample rows from week 49, status `planned`. |
+| Settings | `tbl1qgo2zdmi4cfY` | One row per setting (the "dashboard"): 11 defaults, including `pause_publishing` |
+| Reports | `tblCPfYgwMqHoHj8` | Weekly and monthly reports |
+| Leads | `tblpyKQKKIc9p87C` | CRM; `valid_lead` is a formula: all four tests from CLAUDE.md §3 ticked |
+
+**To do by hand (the Lark tool can't create views or delete tables):**
+- Delete the empty default table "Table1" (or similar).
+- In Content, add these views:
+  - **Calendar** (by `scheduled_at`)
+  - **Kanban** (grouped by `status`)
+  - **Gallery** (cover: `preview`)
+  - **Needs approval** (grid, filter `status` = `pending_approval`)
+  - **By platform** (grid grouped by `platform`)
+- Share the Base with the Lark app (Share → add app) so n8n can read and write it.
+
 ## Wiki: "Linkbot Marketing Wiki" (space `7709700631312748303`, private)
 
 | Page | Node token | Status |

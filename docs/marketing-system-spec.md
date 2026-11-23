@@ -277,3 +277,8 @@ Build one phase at a time, each working end to end. At the end of each: how to t
 - **20 Nov 2026:**
   - Storage moved from Cloudflare R2 to **Lark Drive**. A renderer `/media/<token>` endpoint serves expiring public links for Instagram, and the other platforms get direct uploads. R2 is no longer used.
   - Gemini's free tier has no image quota, so **Cloudflare Workers AI (FLUX) is the main image source for now**, with Gemini as an option if billing is added later.
+- **23 Nov 2026:**
+  - **Text AI runs on the Gemini free tier for now** (`AI_TEXT_PROVIDER=gemini`), until a card is available for the Claude API. A test on the real Copywriter instructions passed with `gemini-3.5-flash`.
+  - Free-tier models are often busy (HTTP 503), so every AI call tries the models in `GEMINI_TEXT_MODELS` in order, with retries. Switching to Claude is a settings change, and the agent prompts are provider-neutral.
+  - Hermes + Claude subscription was rejected: it still needs a paid plan, is experimental, and its terms for unattended business use are unclear.
+  - The Lark Base was created: IDs in `docs/lark-workspace.md`.
