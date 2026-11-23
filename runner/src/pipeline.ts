@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { CopywriterOut, BrandCheckOut, VisualQcOut, prompts, promptVersion, type RenderSpec } from './agents.js';
-import { generateJson, type AiImage } from './ai.js';
+import { generateJson, QuotaExhaustedError, type AiImage } from './ai.js';
 import { env, required, RUNNER_DIR } from './env.js';
 import { updateRecord, uploadAttachment, type BaseRecord } from './lark.js';
 
@@ -72,13 +72,27 @@ function planFromRecord(f: Record<string, any>) {
   };
 }
 
+/**
+ * Carousel numbering: badges only on point slides, numbered 1..n in order. A number the model
+ * wrote into the heading ("1. Data copy-pasting") is removed, so it never appears twice.
+ */
+export function normaliseSlides<T extends { kind: string; heading: string; number?: number }>(slides: T[]): T[] {
+  let n = 0;
+  return slides.map((s) => {
+    const heading = s.heading.replace(/^\s*\d{1,2}\s*[.)\-:]\s*/, '');
+    if (s.kind !== 'point') return { ...s, heading, number: undefined };
+    n++;
+    return { ...s, heading, number: n };
+  });
+}
+
 /** Map the Copywriter's render spec onto the renderer's API. */
 function toRenderRequest(postId: string, spec: RenderSpec): { endpoint: string; body: Record<string, unknown> } | null {
   const image = (p?: string) => (p ? { image: { prompt: p } } : {});
   switch (spec.kind) {
     case 'none': return null;
     case 'image': return { endpoint: '/render/image', body: { postId, headline: spec.headline, sub: spec.sub, tag: spec.tag, ...image(spec.image_prompt) } };
-    case 'carousel': return { endpoint: '/render/carousel', body: { postId, slides: spec.slides } };
+    case 'carousel': return { endpoint: '/render/carousel', body: { postId, slides: normaliseSlides(spec.slides) } };
     case 'story': return { endpoint: '/render/story', body: { postId, headline: spec.headline, sub: spec.sub, tag: spec.tag, button: spec.button, ...image(spec.image_prompt) } };
     case 'reel': return {
       endpoint: '/render/reel',
@@ -221,6 +235,11 @@ export async function processPost(rec: BaseRecord, opts: RunOptions): Promise<'p
       opts.log(`  ✓ ready for approval (attempt ${attempt})`);
       return 'pending_approval';
     } catch (e) {
+      if (e instanceof QuotaExhaustedError) {
+        // Not the post's fault: put it back in the queue untouched and stop the batch.
+        if (!opts.dry) await updateRecord(table, rec.id, { status: 'planned', error: '' });
+        throw e;
+      }
       lastError = (e as Error).message;
       opts.log(`  ✗ error: ${lastError.slice(0, 300)}`);
     }

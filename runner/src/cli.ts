@@ -1,6 +1,7 @@
 // npm run run -- [--post W49-IG-03 ...] [--limit 3] [--dry]
 // Picks `planned` posts from Lark Base and runs each through the generation loop.
 import { processPost } from './pipeline.js';
+import { callStats, QuotaExhaustedError } from './ai.js';
 import { readSettings, searchRecords } from './lark.js';
 import { env, required } from './env.js';
 
@@ -42,7 +43,16 @@ for (const rec of records) {
   const id = String(rec.fields.post_id);
   log(`\n▶ ${id} (${rec.fields.platform} · ${rec.fields.format} · ${rec.fields.pillar})`);
   const t = Date.now();
-  const status = await processPost(rec, { dry, maxAttempts, log });
-  summary.push(`${status === 'pending_approval' ? '✅' : '❌'} ${id}: ${status} (${((Date.now() - t) / 1000).toFixed(0)}s)`);
+  try {
+    const status = await processPost(rec, { dry, maxAttempts, log });
+    summary.push(`${status === 'pending_approval' ? '✅' : '❌'} ${id}: ${status} (${((Date.now() - t) / 1000).toFixed(0)}s)`);
+  } catch (e) {
+    if (e instanceof QuotaExhaustedError) {
+      summary.push(`⏸ ${id}: back to planned (AI quota used up)`);
+      summary.push(`⏸ Stopped: ${e.message}`);
+      break;
+    }
+    throw e;
+  }
 }
-console.log(`\n${summary.join('\n')}`);
+console.log(`\n${summary.join('\n')}\nAI calls this run: ${callStats.calls}`);

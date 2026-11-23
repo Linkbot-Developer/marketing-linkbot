@@ -95,4 +95,6 @@ Also return `"render"`, matching the post's format exactly. On-image text is sho
 | `story` | `{ "kind": "story", "headline": "...", "sub": "optional", "tag": "optional", "button": "optional", "image_prompt": "optional" }` |
 | `reel`, `short_video` | `{ "kind": "reel", "scenes": [...] }`: 4–6 scenes, 15–30 s total when spoken. Scene types: `{ "type": "photo", "text": "...", "vo": "spoken line", "image_prompt": "...", "motion": "push-in" \| "pull-out" \| "drift" }`, `{ "type": "statement", "text": "...", "vo": "..." }`, `{ "type": "steps", "title": "...", "label": "Example workflow", "steps": ["2–5 short steps"], "vo": "...", "notification": { "from": "...", "text": "..." } }`, `{ "type": "cta", "text": "...", "vo": "...", "button": "approved CTA", "footer": "Link in bio · linkbot.sg" }`. Start with a hook scene; end with a `cta` scene. |
 
+Headings use **sentence case** ("5 signs your business is ready for automation", not Title Case), and never start with a number: point slides are numbered automatically.
+
 `image_prompt` describes a realistic scene in plain words (people, place, light, mood). The brand rules for images are added automatically, so don't repeat them.

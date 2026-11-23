@@ -16,6 +16,13 @@ export interface AiResult<T> { data: T; model: string; provider: string; attempt
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Thrown when every model's free daily quota is used up. Not a content failure: the post stays `planned`. */
+export class QuotaExhaustedError extends Error {}
+
+/** Models whose daily quota ran out during this run (free tier: 20 requests/day/model). */
+const exhausted = new Set<string>();
+export const callStats = { calls: 0 };
+
 export async function generateJson<T>(req: AiRequest<T>): Promise<AiResult<T>> {
   const provider = (env.AI_TEXT_PROVIDER ?? 'gemini').toLowerCase();
   if (provider === 'gemini') return gemini(req);
@@ -35,8 +42,13 @@ async function gemini<T>(req: AiRequest<T>): Promise<AiResult<T>> {
 
   // Up to 3 rounds through the model list; a schema failure is fed back to the model on the next try.
   for (let round = 0; round < 3; round++) {
+    if (models.every((m) => exhausted.has(m))) {
+      throw new QuotaExhaustedError(`Free daily AI quota used up for all models (${models.join(', ')}). It resets daily; run again later.`);
+    }
     for (const model of models) {
+      if (exhausted.has(model)) continue;
       attempts++;
+      callStats.calls++;
       const parts: unknown[] = [{ text: req.user + feedback }];
       for (const img of req.images ?? []) parts.push({ inlineData: { mimeType: img.mime, data: img.data.toString('base64') } });
       let res: Response;
@@ -56,7 +68,20 @@ async function gemini<T>(req: AiRequest<T>): Promise<AiResult<T>> {
         continue;
       }
       const body = (await res.json().catch(() => ({}))) as any;
-      if (res.status === 503 || res.status === 429 || res.status === 500) {
+      if (res.status === 429) {
+        const details: any[] = body.error?.details ?? [];
+        const perDay = details.some((d) => (d.violations ?? []).some((v: any) => /PerDay/i.test(v.quotaId ?? '')));
+        if (perDay) {
+          exhausted.add(model); // don't waste more calls on it today
+          errors.push(`${model}: daily quota used up`);
+          continue;
+        }
+        const delay = parseFloat(String(details.find((d) => d.retryDelay)?.retryDelay ?? '10'));
+        errors.push(`${model}: rate limited, waiting ${Math.min(delay, 60)}s`);
+        await sleep(Math.min(delay, 60) * 1000);
+        continue;
+      }
+      if (res.status === 503 || res.status === 500) {
         errors.push(`${model}: HTTP ${res.status} (busy)`);
         continue; // try the next model
       }
@@ -81,5 +106,6 @@ async function gemini<T>(req: AiRequest<T>): Promise<AiResult<T>> {
     }
     await sleep(4000 * (round + 1)); // free tier is often busy; back off before the next round
   }
+  if (models.every((m) => exhausted.has(m))) throw new QuotaExhaustedError(`Free daily AI quota used up for all models.`);
   throw new Error(`[${req.label}] AI failed after ${attempts} attempts: ${errors.slice(-6).join(' | ')}`);
 }
