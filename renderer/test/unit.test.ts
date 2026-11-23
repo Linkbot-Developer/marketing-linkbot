@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { escapeHtml, fill, textToHtml } from '../src/lib/html.js';
-import { IMAGE_RULES } from '../src/lib/ai-images.js';
+import { IMAGE_RULES, sanitiseBrief } from '../src/lib/ai-images.js';
 import { CarouselRequest, ImageRequest, ReelRequest } from '../src/schemas.js';
 
 describe('templates', () => {
@@ -24,6 +24,11 @@ describe('templates', () => {
 describe('brand rules in image prompts', () => {
   it('always forbids text, logos, clocks and sci-fi', () => {
     for (const rule of ['No readable text', 'no logos', 'No clocks', 'No robots']) expect(IMAGE_RULES).toContain(rule);
+  });
+  it('strips times and clocks from briefs so the model cannot draw them', () => {
+    const out = sanitiseBrief('A tired worker at 5pm on Friday, a wall clock showing 5:00 PM behind, 6 o\'clock light');
+    expect(out).not.toMatch(/5pm|5:00|o'clock|clock/i);
+    expect(out).toContain('tired worker');
   });
 });
 

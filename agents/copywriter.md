@@ -83,3 +83,16 @@ Count caption words **excluding hashtags, URLs and emojis**. TikTok caption limi
 }
 ```
 Use `slides` only for carousels and documents, and `video_script` only for reels and short videos. Otherwise use an empty array.
+
+## Render spec (required): what the renderer draws
+Also return `"render"`, matching the post's format exactly. On-image text is short: headlines ≤ 12 words; use `\n` for a line break.
+
+| Format | `render` |
+|---|---|
+| `text`, `poll` | `{ "kind": "none" }`, plus for polls `"poll": { "question": "...", "options": ["…≤30 chars", "…"] }` at the top level |
+| `image` | `{ "kind": "image", "headline": "...", "sub": "optional", "tag": "optional e.g. Example workflow", "image_prompt": "optional AI photo brief; omit for a solid navy card" }` |
+| `carousel`, `document` | `{ "kind": "carousel", "slides": [ { "kind": "title" \| "point" \| "cta", "heading": "...", "body": "optional", "number": 1, "button": "CTA text, cta slide only" } ] }`: 3–8 slides, the first `title`, the last `cta` |
+| `story` | `{ "kind": "story", "headline": "...", "sub": "optional", "tag": "optional", "button": "optional", "image_prompt": "optional" }` |
+| `reel`, `short_video` | `{ "kind": "reel", "scenes": [...] }`: 4–6 scenes, 15–30 s total when spoken. Scene types: `{ "type": "photo", "text": "...", "vo": "spoken line", "image_prompt": "...", "motion": "push-in" \| "pull-out" \| "drift" }`, `{ "type": "statement", "text": "...", "vo": "..." }`, `{ "type": "steps", "title": "...", "label": "Example workflow", "steps": ["2–5 short steps"], "vo": "...", "notification": { "from": "...", "text": "..." } }`, `{ "type": "cta", "text": "...", "vo": "...", "button": "approved CTA", "footer": "Link in bio · linkbot.sg" }`. Start with a hook scene; end with a `cta` scene. |
+
+`image_prompt` describes a realistic scene in plain words (people, place, light, mood). The brand rules for images are added automatically, so don't repeat them.

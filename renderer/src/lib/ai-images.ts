@@ -6,8 +6,8 @@ import { config } from '../config.js';
 // ("plain unbranded lid", "bare walls"), then negatively for models that do follow them.
 // Anything that still slips through is caught by the visual QC step (W3) and regenerated.
 export const IMAGE_RULES =
-  'Devices are plain and unbranded: matte laptop lids with no emblem, phones with blank screens. ' +
-  'Walls are bare or have soft-focus plants and windows only. ' +
+  'Devices are plain and unbranded: matte laptop lids with no emblem; any visible screen shows only a soft plain blue gradient, or faces away from the camera. ' +
+  'Walls are bare or have soft-focus plants and windows only; no wall clocks anywhere in the room. ' +
   'No readable text, no letters or numbers, no logos or brand marks, no watermarks. ' +
   'No clocks showing a specific time. No robots, no sci-fi, no futuristic AI imagery.';
 
@@ -53,10 +53,22 @@ async function gemini(prompt: string, aspect: Aspect): Promise<GeneratedImage> {
   return { buf: Buffer.from(part.inlineData.data, 'base64'), mime: part.inlineData.mimeType, provider: 'gemini', model };
 }
 
+/**
+ * Image models draw whatever is named, even after "no" (e.g. "5pm" → a clock). Remove time-of-day and
+ * clock references from the brief; the overlay text carries the time instead.
+ */
+export function sanitiseBrief(brief: string): string {
+  return brief
+    .replace(/\b\d{1,2}(:\d{2})?\s*(a\.?m\.?|p\.?m\.?|o'?clock)\b/gi, '')
+    .replace(/\b(wall[- ]?)?clocks?\b|\bwatch(es)?\b|\btime on the\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 /** Try each configured provider in order; throws with every provider's error if all fail. */
 export async function generateImage(brief: string, aspect: Aspect = '4:5'): Promise<GeneratedImage> {
   const framing = aspect === '9:16' ? 'Vertical framing.' : aspect === '1:1' ? 'Square framing.' : 'Portrait 4:5 framing.';
-  const prompt = `${brief.trim()} ${framing} ${IMAGE_RULES}`;
+  const prompt = `${sanitiseBrief(brief)} ${framing} ${IMAGE_RULES}`;
   const errors: string[] = [];
   for (const provider of config.imageProviders) {
     try {

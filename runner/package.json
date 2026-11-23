@@ -1,0 +1,21 @@
+{
+  "name": "linkbot-runner",
+  "private": true,
+  "type": "module",
+  "description": "Runs the AI agents on posts from Lark Base: write, brand-check, render, visual QC, write back for approval",
+  "scripts": {
+    "run": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
