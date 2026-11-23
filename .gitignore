@@ -26,3 +26,5 @@ renderer/sandbox/
 # Personal Claude Code settings (not shared)
 .claude/settings.local.json
 runner/out/
+n8n/.credential-ids.json
+n8n/.callback-url.txt

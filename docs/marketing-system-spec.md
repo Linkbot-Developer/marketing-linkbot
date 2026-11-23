@@ -33,7 +33,7 @@ Plan → Generate → Quality check → [HUMAN APPROVES] → Schedule & publish 
 | | **Lark Docs / Wiki** | Brand brief (read by the planner), weekly reports | Lark plan |
 | | **Lark bot** (custom app `cli_…` in `.env`) | Approval cards (Approve / Reject / Regenerate), alerts, report summaries | Lark plan |
 | | **Lark Base Dashboard** | Live analytics | Lark plan |
-| Orchestrator | **n8n**: hosting **decision pending** (Cloud or self-hosted on the DO droplet, see §11) | All schedules, webhooks, glue | Cloud: paid after trial · self-host: free |
+| Orchestrator | **n8n Cloud** (decided 23 Nov 2026; public URL, so Lark card clicks and webhooks reach it directly) | All schedules, webhooks, glue | n8n Cloud plan |
 | Server | **DigitalOcean droplet** (company's, to confirm), Docker Compose | Renderer service (and n8n if self-hosted) | Existing |
 | Text "brain" | **Claude API**: `claude-opus-5-5` (model ID from env) | Planning, copywriting, brand/QC check (text **and** vision), reports | Pay per use (~US$10–20/month estimated, §6) |
 | Images | **Gemini API** image model (free tier, **on trial**) → fallback **Cloudflare Workers AI** | Image generation | Free tiers |
@@ -261,7 +261,7 @@ Build one phase at a time, each working end to end. At the end of each: how to t
 - If a tool proves unsuitable (API change, limits too low), stop, explain and propose an alternative.
 
 ## 11. Open decisions
-1. **n8n hosting:** n8n Cloud (paid after trial) vs self-hosted on the DO droplet (free; the droplet is needed for the renderer anyway).
+1. ~~**n8n hosting**~~: decided 23 Nov 2026, **n8n Cloud**. The droplet is still needed for the renderer, because n8n Cloud can't run Chromium, FFmpeg or HyperFrames. Until it exists, a Cloudflare Tunnel to the local renderer is a possible stopgap.
 2. **DigitalOcean droplet:** confirm it exists, plus its specs, OS, access and subdomains for HTTPS: `n8n.linkbot.sg` (webhooks) and `renderer.linkbot.sg` (renderer and media links).
 3. **Gemini image free tier:** keep or replace after trial runs.
 4. **Edge TTS and HyperFrames:** keep or replace after phase 2 testing.
@@ -282,3 +282,6 @@ Build one phase at a time, each working end to end. At the end of each: how to t
   - Free-tier models are often busy (HTTP 503), so every AI call tries the models in `GEMINI_TEXT_MODELS` in order, with retries. Switching to Claude is a settings change, and the agent prompts are provider-neutral.
   - Hermes + Claude subscription was rejected: it still needs a paid plan, is experimental, and its terms for unattended business use are unclear.
   - The Lark Base was created: IDs in `docs/lark-workspace.md`.
+  - **n8n Cloud chosen** as the orchestrator; it has a public URL, so the Lark card callbacks and webhooks can be built now. Only the renderer still waits for the droplet.
+  - **Daily AI quota planning:** the runner counts free Gemini requests per day (`runner/out/ai-usage.json`) and fits each run to what's left. The Settings row `ai_quota` controls it. The default plan of 11 posts a week needs about 55 requests, against about 530 free a week.
+  - **The Claude provider is implemented** (`claude-opus-5-5`, server-side refusal fallback) but stays off until billing is approved.

@@ -1,0 +1,366 @@
+{
+  "name": "[Marketing] W4 - Send approval card",
+  "nodes": [
+    {
+      "id": "01-every-10-minutes",
+      "name": "Every 10 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "02-lark-token",
+      "name": "Lark token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "XG0w1tH8E3yi3hwH",
+          "name": "[Marketing] Lark app (tenant token)"
+        }
+      }
+    },
+    {
+      "id": "03-read-settings",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/bitable/v1/apps/UnVYbyvm2anu0dsmiQ1lGpcsgRh/tables/tbl1qgo2zdmi4cfY/records/search?page_size=100",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      }
+    },
+    {
+      "id": "04-find-posts-awaiting-a-card",
+      "name": "Find posts awaiting a card",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/bitable/v1/apps/UnVYbyvm2anu0dsmiQ1lGpcsgRh/tables/tblBUzCMudCo8xPZ/records/search?page_size=20",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"filter\":{\"conjunction\":\"and\",\"conditions\":[{\"field_name\":\"status\",\"operator\":\"is\",\"value\":[\"pending_approval\"]},{\"field_name\":\"card_message_id\",\"operator\":\"isEmpty\",\"value\":[]}]}}"
+      }
+    },
+    {
+      "id": "05-one-item-per-post",
+      "name": "One item per post",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst flat = (v) => Array.isArray(v) ? v.map((s) => s.text ?? s).join('') : v;\nconst settings = {};\nfor (const r of $('Read settings').first().json.data.items ?? []) {\n  const raw = String(flat(r.fields.value) ?? '');\n  try { settings[flat(r.fields.setting)] = JSON.parse(raw); } catch { settings[flat(r.fields.setting)] = raw; }\n}\nconst approver = settings.approver ?? {};\nif (!approver.open_id) throw new Error('Settings row \"approver\" is missing an open_id');\nconst items = $input.first().json.data?.items ?? [];\nreturn items.map((r) => {\n  const f = r.fields;\n  const pics = (f.preview ?? []).filter((a) => String(a.type ?? '').startsWith('image/'));\n  return { json: {\n    record_id: r.record_id,\n    post_id: flat(f.post_id), platform: flat(f.platform), format: flat(f.format), pillar: flat(f.pillar), topic: flat(f.topic),\n    caption: flat(f.caption) ?? '', hashtags: flat(f.hashtags) ?? '', qc_notes: flat(f.qc_notes) ?? '',\n    scheduled_at: f.scheduled_at ?? null, approval_deadline: f.approval_deadline ?? null,\n    media_count: (f.preview ?? []).length, has_video: (f.preview ?? []).some((a) => String(a.type ?? '').startsWith('video/')),\n    preview_url: pics[0]?.url ?? '',\n    // Cards go to the approval group if one is set (Settings: approval_chat), otherwise privately to the approver.\n    receive_type: settings.approval_chat?.chat_id ? 'chat_id' : 'open_id',\n    receive_id: settings.approval_chat?.chat_id || approver.open_id,\n  } };\n});"
+      }
+    },
+    {
+      "id": "06-download-preview",
+      "name": "Download preview",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        },
+        "method": "GET",
+        "url": "={{ $json.preview_url }}"
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "07-upload-preview-to-lark-chat",
+      "name": "Upload preview to Lark chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/im/v1/images",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "image_type",
+              "value": "message"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "image",
+              "inputDataFieldName": "data"
+            }
+          ]
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "08-build-card",
+      "name": "Build card",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst p = $('One item per post').item.json;\nconst imageKey = $json.data?.image_key ?? '';\nconst sgt = (ms) => ms ? new Date(ms).toLocaleString('en-GB', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'not set';\nconst clip = (s, n) => (s.length > n ? s.slice(0, n) + '…' : s);\nconst value = (action) => ({ action, record_id: p.record_id, post_id: p.post_id });\nconst els = [];\nif (imageKey) els.push({ tag: 'img', img_key: imageKey, alt: { tag: 'plain_text', content: 'Preview of ' + p.post_id }, scale_type: 'fit_horizontal' });\nels.push({ tag: 'markdown', content:\n  '**Posts:** ' + sgt(p.scheduled_at) + ' (SGT)\\n**Approve by:** ' + sgt(p.approval_deadline) +\n  '\\n**Pillar:** ' + (p.pillar ?? '') + '\\n**Topic:** ' + (p.topic ?? '') +\n  (p.media_count > 1 || p.has_video ? '\\n**Media:** ' + p.media_count + ' file(s)' + (p.has_video ? ', including video' : '') + '. Open the Base to see them all.' : '') });\nels.push({ tag: 'hr' });\nels.push({ tag: 'markdown', content: '**Caption**\\n' + clip(p.caption, 1800) + (p.hashtags ? '\\n\\n' + p.hashtags : '') });\nif (p.qc_notes) els.push({ tag: 'markdown', content: '**Automatic checks**\\n' + clip(p.qc_notes, 500) });\nels.push({ tag: 'markdown', content: '[Open in Lark Base](https://sglinkbot.sg.larksuite.com/base/UnVYbyvm2anu0dsmiQ1lGpcsgRh?table=tblBUzCMudCo8xPZ)' + (p.receive_type === 'chat_id' ? ' · Only the marketing approver can use the buttons.' : '') });\nels.push({ tag: 'form', name: 'decision', elements: [\n  { tag: 'input', name: 'reason', placeholder: { tag: 'plain_text', content: 'What should change? (needed to reject)' }, max_length: 500 },\n  { tag: 'button', name: 'approve', text: { tag: 'plain_text', content: 'Approve' }, type: 'primary_filled', form_action_type: 'submit', behaviors: [{ type: 'callback', value: value('approve') }] },\n  { tag: 'button', name: 'reject', text: { tag: 'plain_text', content: 'Reject with feedback' }, type: 'danger', form_action_type: 'submit', behaviors: [{ type: 'callback', value: value('reject') }] },\n  { tag: 'button', name: 'regenerate', text: { tag: 'plain_text', content: 'Regenerate' }, type: 'default', form_action_type: 'submit', behaviors: [{ type: 'callback', value: value('regenerate') }] },\n] });\nconst card = {\n  schema: '2.0', config: { update_multi: true },\n  header: { template: 'blue', title: { tag: 'plain_text', content: 'Approve post ' + p.post_id }, subtitle: { tag: 'plain_text', content: [p.platform, p.format].filter(Boolean).join(' · ') } },\n  body: { elements: els },\n};\nreturn { json: { record_id: p.record_id, receive_type: p.receive_type, receive_id: p.receive_id, content: JSON.stringify(card) } };"
+      }
+    },
+    {
+      "id": "09-send-card",
+      "name": "Send card",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "POST",
+        "url": "=https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type={{ $json.receive_type }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ receive_id: $json.receive_id, msg_type: \"interactive\", content: $json.content }) }}"
+      }
+    },
+    {
+      "id": "10-save-card-id-on-the-post",
+      "name": "Save card id on the post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "PUT",
+        "url": "=https://open.larksuite.com/open-apis/bitable/v1/apps/UnVYbyvm2anu0dsmiQ1lGpcsgRh/tables/tblBUzCMudCo8xPZ/records/{{ $('Build card').item.json.record_id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: { card_message_id: $json.data.message_id } }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Every 10 minutes": {
+      "main": [
+        [
+          {
+            "node": "Lark token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lark token": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Find posts awaiting a card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find posts awaiting a card": {
+      "main": [
+        [
+          {
+            "node": "One item per post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per post": {
+      "main": [
+        [
+          {
+            "node": "Download preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download preview": {
+      "main": [
+        [
+          {
+            "node": "Upload preview to Lark chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload preview to Lark chat": {
+      "main": [
+        [
+          {
+            "node": "Build card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build card": {
+      "main": [
+        [
+          {
+            "node": "Send card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send card": {
+      "main": [
+        [
+          {
+            "node": "Save card id on the post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Singapore",
+    "saveManualExecutions": true
+  }
+}

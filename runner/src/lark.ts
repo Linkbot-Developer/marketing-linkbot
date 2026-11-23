@@ -61,6 +61,11 @@ export async function updateRecord(tableId: string, recordId: string, fields: Re
   await call('PUT', `/bitable/v1/apps/${app()}/tables/${tableId}/records/${recordId}`, { fields });
 }
 
+export async function createRecord(tableId: string, fields: Record<string, unknown>): Promise<string> {
+  const data = await call<any>('POST', `/bitable/v1/apps/${app()}/tables/${tableId}/records`, { fields });
+  return data.record.record_id;
+}
+
 /** Upload a file into this Base (for an Attachment field). Returns the file_token. */
 export async function uploadAttachment(name: string, data: Buffer, mime: string): Promise<string> {
   const form = new FormData();

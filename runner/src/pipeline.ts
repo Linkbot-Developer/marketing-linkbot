@@ -131,7 +131,11 @@ export async function processPost(rec: BaseRecord, opts: RunOptions): Promise<'p
   const attemptsBefore = Number(f.attempts ?? 0);
   if (!opts.dry) await updateRecord(table, rec.id, { status: 'generating', error: '' });
 
-  let feedback = '';
+  // A rejected post is rewritten with the approver's comments (set by the Lark approval card, n8n W5).
+  const wasRejected = f.status === 'rejected';
+  let feedback = wasRejected
+    ? `The approver rejected the previous version. Apply this feedback fully: ${f.rejection_reason || 'No reason given: write a clearly different version (new hook and new visual).'}`
+    : '';
   let lastError = '';
   for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
     opts.log(`  attempt ${attempt}/${opts.maxAttempts}: writing…`);
@@ -229,6 +233,7 @@ export async function processPost(rec: BaseRecord, opts: RunOptions): Promise<'p
           prompt_version: version,
           attempts: attemptsBefore + attempt,
           status: 'pending_approval',
+          card_message_id: '', // a fresh approval card is sent for the new version (n8n W4)
           error: '',
         });
       }
@@ -237,7 +242,7 @@ export async function processPost(rec: BaseRecord, opts: RunOptions): Promise<'p
     } catch (e) {
       if (e instanceof QuotaExhaustedError) {
         // Not the post's fault: put it back in the queue untouched and stop the batch.
-        if (!opts.dry) await updateRecord(table, rec.id, { status: 'planned', error: '' });
+        if (!opts.dry) await updateRecord(table, rec.id, { status: wasRejected ? 'rejected' : 'planned', error: '' });
         throw e;
       }
       lastError = (e as Error).message;

@@ -1,0 +1,437 @@
+{
+  "name": "[Marketing] W5 - Handle approval",
+  "nodes": [
+    {
+      "id": "01-lark-card-click",
+      "name": "Lark card click",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "marketing-lark-card-<N8N_WEBHOOK_SECRET>",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "02-read-the-click",
+      "name": "Read the click",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst b = $input.first().json.body ?? {};\nif (b.type === 'url_verification' || (b.challenge && !b.event)) return [{ json: { kind: 'challenge', challenge: b.challenge } }];\nconst e = b.event ?? {};\nlet v = e.action?.value ?? {};\nif (typeof v === 'string') { try { v = JSON.parse(v); } catch { v = {}; } }\nreturn [{ json: { kind: 'click', action: v.action, record_id: v.record_id, post_id: v.post_id,\n  reason: e.action?.form_value?.reason ?? '', operator: e.operator?.open_id ?? '', message_id: e.context?.open_message_id ?? '' } }];"
+      }
+    },
+    {
+      "id": "03-is-lark-checking-the-url-",
+      "name": "Is Lark checking the URL?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "Is Lark checking the URL?-c",
+              "leftValue": "={{ $json.kind === 'challenge' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "04-answer-the-url-check",
+      "name": "Answer the URL check",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        150
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ challenge: $json.challenge }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "05-acknowledge-the-click",
+      "name": "Acknowledge the click",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        450
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{}",
+        "options": {}
+      }
+    },
+    {
+      "id": "06-lark-token",
+      "name": "Lark token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        450
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "XG0w1tH8E3yi3hwH",
+          "name": "[Marketing] Lark app (tenant token)"
+        }
+      }
+    },
+    {
+      "id": "07-read-settings",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        450
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/bitable/v1/apps/UnVYbyvm2anu0dsmiQ1lGpcsgRh/tables/tbl1qgo2zdmi4cfY/records/search?page_size=100",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      }
+    },
+    {
+      "id": "08-get-the-post",
+      "name": "Get the post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        450
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "GET",
+        "url": "=https://open.larksuite.com/open-apis/bitable/v1/apps/UnVYbyvm2anu0dsmiQ1lGpcsgRh/tables/tblBUzCMudCo8xPZ/records/{{ $('Read the click').first().json.record_id }}"
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "09-check-and-decide",
+      "name": "Check and decide",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        450
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst flat = (v) => Array.isArray(v) ? v.map((s) => s.text ?? s).join('') : v;\nconst settings = {};\nfor (const r of $('Read settings').first().json.data.items ?? []) {\n  const raw = String(flat(r.fields.value) ?? '');\n  try { settings[flat(r.fields.setting)] = JSON.parse(raw); } catch { settings[flat(r.fields.setting)] = raw; }\n}\nconst click = $('Read the click').first().json;\nconst rec = $('Get the post').first().json.data?.record;\nconst f = rec?.fields ?? {};\nconst who = settings.approver ?? {};\nconst reason = String(click.reason ?? '').trim();\nconst fail = (msg) => [{ json: { ok: false, message_id: click.message_id, text: msg } }];\nif (!who.open_id || click.operator !== who.open_id) return fail('Only the marketing approver (' + (who.email ?? 'see Settings') + ') can approve or reject posts.');\nif (!rec) return fail('Post not found in Lark Base.');\nif (flat(f.card_message_id) && click.message_id && flat(f.card_message_id) !== click.message_id) return fail('This card is out of date: a newer version was sent.');\nif (flat(f.status) !== 'pending_approval') return fail('Already handled (status: ' + flat(f.status) + ').');\nif (click.action === 'reject' && !reason) return fail('Please type what should change, then press Reject.');\n\nconst now = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });\nconst map = {\n  approve: { fields: { status: 'approved' }, colour: 'green', title: 'Approved', note: 'Approved on ' + now + '. It will be scheduled for its posting time.' },\n  reject: { fields: { status: 'rejected', rejection_reason: reason }, colour: 'red', title: 'Rejected', note: 'Rejected on ' + now + '. A new version will be written with your feedback.' },\n  regenerate: { fields: { status: 'rejected', rejection_reason: reason || 'Regenerate requested: write a clearly different version.' }, colour: 'orange', title: 'Regenerating', note: 'Sent back on ' + now + ' for a new version.' },\n}[click.action];\nif (!map) return fail('Unknown action.');\nconst card = {\n  schema: '2.0', config: { update_multi: true },\n  header: { template: map.colour, title: { tag: 'plain_text', content: map.title + ': ' + flat(f.post_id) }, subtitle: { tag: 'plain_text', content: [flat(f.platform), flat(f.format)].filter(Boolean).join(' · ') } },\n  body: { elements: [\n    { tag: 'markdown', content: map.note + (reason ? '\\n\\n**Your feedback:** ' + reason : '') },\n    { tag: 'markdown', content: '[Open in Lark Base](https://sglinkbot.sg.larksuite.com/base/UnVYbyvm2anu0dsmiQ1lGpcsgRh?table=tblBUzCMudCo8xPZ)' },\n  ] },\n};\nreturn [{ json: { ok: true, record_id: rec.record_id, fields: map.fields, message_id: click.message_id, card: JSON.stringify(card) } }];"
+      }
+    },
+    {
+      "id": "10-allowed-",
+      "name": "Allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        450
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "Allowed?-c",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "11-update-the-post",
+      "name": "Update the post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        350
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "PUT",
+        "url": "=https://open.larksuite.com/open-apis/bitable/v1/apps/UnVYbyvm2anu0dsmiQ1lGpcsgRh/tables/tblBUzCMudCo8xPZ/records/{{ $json.record_id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: $json.fields }) }}"
+      }
+    },
+    {
+      "id": "12-show-the-decision-on-the-card",
+      "name": "Show the decision on the card",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        350
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "PATCH",
+        "url": "=https://open.larksuite.com/open-apis/im/v1/messages/{{ $('Check and decide').first().json.message_id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $('Check and decide').first().json.card }) }}"
+      }
+    },
+    {
+      "id": "13-explain-in-the-card-thread",
+      "name": "Explain in the card thread",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        550
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "POST",
+        "url": "=https://open.larksuite.com/open-apis/im/v1/messages/{{ $json.message_id }}/reply",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ msg_type: \"text\", content: JSON.stringify({ text: $json.text }) }) }}"
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Lark card click": {
+      "main": [
+        [
+          {
+            "node": "Read the click",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read the click": {
+      "main": [
+        [
+          {
+            "node": "Is Lark checking the URL?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Lark checking the URL?": {
+      "main": [
+        [
+          {
+            "node": "Answer the URL check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Acknowledge the click",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge the click": {
+      "main": [
+        [
+          {
+            "node": "Lark token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lark token": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Get the post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get the post": {
+      "main": [
+        [
+          {
+            "node": "Check and decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check and decide": {
+      "main": [
+        [
+          {
+            "node": "Allowed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Allowed?": {
+      "main": [
+        [
+          {
+            "node": "Update the post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explain in the card thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update the post": {
+      "main": [
+        [
+          {
+            "node": "Show the decision on the card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Singapore",
+    "saveManualExecutions": true
+  }
+}
