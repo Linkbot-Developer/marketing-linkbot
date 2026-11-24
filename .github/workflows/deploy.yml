@@ -101,9 +101,9 @@ jobs:
       - name: Upload bundle to server
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.DO_HOST }}
-          username: ${{ secrets.DO_USER }}
-          key: ${{ secrets.DO_SSH_KEY }}
+          host: ${{ secrets.MARKETING_DO_HOST }}
+          username: ${{ secrets.MARKETING_DO_USER }}
+          key: ${{ secrets.MARKETING_DO_SSH_KEY }}
           source: "release.tar.gz"
           target: ${{ env.APP_DIR }}
 
@@ -112,9 +112,9 @@ jobs:
         env:
           APP_DIR: ${{ env.APP_DIR }}
         with:
-          host: ${{ secrets.DO_HOST }}
-          username: ${{ secrets.DO_USER }}
-          key: ${{ secrets.DO_SSH_KEY }}
+          host: ${{ secrets.MARKETING_DO_HOST }}
+          username: ${{ secrets.MARKETING_DO_USER }}
+          key: ${{ secrets.MARKETING_DO_SSH_KEY }}
           envs: APP_DIR
           script: |
             set -e
@@ -129,6 +129,11 @@ jobs:
             # .env is created by hand once (docs/deploy.md) and never shipped
             if [ ! -f .env ]; then
               echo "::error::$APP_DIR/.env is missing. Create it from .env.example first (docs/deploy.md)."
+              exit 1
+            fi
+            # without a key the renderer answers anyone: never start it like that on a public server
+            if ! grep -Eq '^RENDERER_API_KEY=[^[:space:]#]{24,}' .env; then
+              echo "::error::RENDERER_API_KEY in $APP_DIR/.env is missing or too short (openssl rand -hex 32)."
               exit 1
             fi
 

@@ -1,6 +1,6 @@
-# Add this block to the droplet's /etc/caddy/Caddyfile (next to the linkbot.sg blocks), then:
-#   sudo systemctl reload caddy
+# /etc/caddy/Caddyfile on the marketing droplet (copied there by deploy/server-setup.sh).
 # Needs a DNS A record: renderer.linkbot.sg → the droplet's IP. Caddy gets the HTTPS certificate itself.
+# After changing it on the server: sudo systemctl reload caddy
 renderer.linkbot.sg {
     # n8n sends JSON with a few base64 images (the renderer accepts up to 30 MB)
     request_body {
@@ -17,4 +17,9 @@ renderer.linkbot.sg {
             write_timeout 10m
         }
     }
+}
+
+# anything else reaching this server by IP or another name gets nothing
+:80 {
+    respond 404
 }

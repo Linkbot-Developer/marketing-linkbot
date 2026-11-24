@@ -1,6 +1,6 @@
 # Deploying to the DigitalOcean droplet
 
-Deploys use the same pattern as `linkbot-redesign`. A GitHub Action (`.github/workflows/deploy.yml`) installs, typechecks and tests the code, then copies one file to the droplet. The droplet unpacks it and restarts the renderer under PM2, behind Caddy. The server never builds.
+Deploys use the same pattern as `linkbot-redesign`, on a separate droplet. A GitHub Action (`.github/workflows/deploy.yml`) installs, typechecks and tests the code, then copies one file to the droplet. The droplet unpacks it and restarts the renderer under PM2, behind Caddy. The server never builds.
 
 ## What runs where
 
@@ -12,16 +12,30 @@ Deploys use the same pattern as `linkbot-redesign`. A GitHub Action (`.github/wo
 | **Secrets** | `/srv/marketing-linkbot/.env` on the droplet only | Created by hand, never in GitHub, never replaced by a deploy |
 | **State** | `/srv/marketing-linkbot/data/` | Render outputs (kept 30 days) and the runner's AI quota ledger; deploys keep it |
 
-## One-time set-up
+## One-time set-up (new droplet)
 
-1. **DNS:** an A record for `renderer.linkbot.sg` pointing to the droplet's IP. With Cloudflare's proxy on, set SSL/TLS to Full (strict).
-2. **Server packages:** copy `deploy/server-setup.sh` to the droplet and run it as the deploy user: `bash server-setup.sh`. It installs FFmpeg, Edge TTS (pipx), Chromium's libraries and the `/srv/marketing-linkbot` folder. It expects nvm, Node 22, PM2 and Caddy, which the website deploy already set up.
-3. **Secrets:** create `/srv/marketing-linkbot/.env` from `.env.example`, filling in the same keys as your local `.env`, then run `chmod 600 .env`. On the server, set:
-   - `RENDERER_API_KEY`: a long random value (`openssl rand -hex 32`). Put the same value in the n8n credential that calls the renderer.
+The marketing system has its **own droplet** (Ubuntu 24.04, SGP1, at least 2 vCPU / 4 GB; see `do-server-request.md`), separate from the website's server.
+
+1. **DNS:** an A record for `renderer.linkbot.sg` pointing to the new droplet's IP. With Cloudflare's proxy on, set SSL/TLS to Full (strict).
+2. **A deploy key for GitHub Actions**, made on your PC (never reuse the website's key):
+   ```bash
+   ssh-keygen -t ed25519 -N "" -C github-actions-marketing -f marketing-deploy-key
+   ```
+   This gives `marketing-deploy-key` (private, goes into GitHub) and `marketing-deploy-key.pub` (public, goes on the server).
+3. **Set up the server.** Copy the `deploy/` folder over, then run the script as root with the public key:
+   ```bash
+   scp -r deploy root@<droplet-ip>:/root/
+   ssh root@<droplet-ip> "bash /root/deploy/server-setup.sh \"$(cat marketing-deploy-key.pub)\""
+   ```
+   It installs everything on a bare droplet: security updates, a 2 GB swap file, the firewall (SSH, 80 and 443 only), a `deploy` user (SSH key only, no sudo), Node 22 with nvm, PM2 (restarts after a reboot, with log rotation), FFmpeg, Edge TTS, Chromium's libraries, Caddy with `deploy/Caddyfile`, and `/srv/marketing-linkbot`. You can run it again safely.
+4. **Secrets:** as `deploy`, fill in `/srv/marketing-linkbot/.env` from `.env.example` (the script creates it empty with `chmod 600`). On the server, set:
+   - `RENDERER_API_KEY`: `openssl rand -hex 32`. The deploy refuses to run without it, because the renderer would otherwise answer anyone. Put the same value in the n8n credential that calls the renderer.
    - `RENDERER_URL=http://127.0.0.1:8787`
-4. **Caddy:** add the block from `deploy/Caddyfile` to `/etc/caddy/Caddyfile`, then run `sudo systemctl reload caddy`.
-5. **GitHub secrets** (this repo: Settings → Secrets and variables → Actions): `DO_HOST`, `DO_USER` and `DO_SSH_KEY`, the same ones `linkbot-redesign` uses. Skip this if they're set at organisation level.
-6. **Firewall:** only 22, 80 and 443 open (see `do-server-request.md`). The renderer listens on 127.0.0.1 only.
+5. **GitHub secrets** (this repo: Settings → Secrets and variables → Actions). These are separate from the website's `DO_*` secrets, so a deploy can't land on the wrong server:
+   - `MARKETING_DO_HOST`: the droplet's IP
+   - `MARKETING_DO_USER`: `deploy`
+   - `MARKETING_DO_SSH_KEY`: the whole contents of `marketing-deploy-key` (the private key). Then delete the file from your PC.
+6. **Optional:** restrict SSH (port 22) to the office IP with a DigitalOcean cloud firewall, and enable DigitalOcean weekly backups.
 
 ## Deploying
 
