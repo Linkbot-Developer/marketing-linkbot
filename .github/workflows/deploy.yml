@@ -83,12 +83,15 @@ jobs:
       - name: Bundle deployment files
         run: |
           # code, prompts, templates and brand files only; the brief, content drafts and docs stay in GitHub
-          tar -czf release.tar.gz \
+          # built outside the folder being packed (writing it inside makes tar fail: "file changed as we read it"),
+          # then moved in for the upload step
+          tar -czf "$RUNNER_TEMP/release.tar.gz" \
             --exclude='./.git' --exclude='./.github' --exclude='./brief' --exclude='./content' \
             --exclude='./renderer/out' --exclude='./runner/out' --exclude='./renderer/sandbox' \
             --exclude='./.env' --exclude='./.env.*' --exclude='./data' \
             --exclude='./n8n/.credential-ids.json' --exclude='./n8n/.callback-url.txt' \
             .
+          mv "$RUNNER_TEMP/release.tar.gz" release.tar.gz
 
           # the server extracts this over $APP_DIR: refuse to ship anything that would replace its own state
           # (secrets, render outputs, the AI quota ledger).
