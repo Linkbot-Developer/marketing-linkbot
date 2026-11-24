@@ -149,10 +149,18 @@ jobs:
             pm2 startOrReload deploy/ecosystem.config.cjs --update-env
             pm2 save
 
-            # the daily runner: an hourly cron entry; run-daily.sh only acts at 17:00 Singapore time
+            # the daily runner: one hourly cron entry; run-daily.sh only acts at 17:00 Singapore time.
+            # Left alone when it's already there; otherwise any older run-daily.sh entry is replaced, never added to.
             CRON_LINE="5 * * * * $APP_DIR/deploy/run-daily.sh >> $APP_DIR/logs/runner.log 2>&1"
             chmod +x deploy/run-daily.sh
-            ( crontab -l 2>/dev/null | grep -v 'deploy/run-daily.sh' ; echo "$CRON_LINE" ) | crontab -
+            CURRENT_CRON="$(crontab -l 2>/dev/null || true)"
+            if printf '%s\n' "$CURRENT_CRON" | grep -qxF "$CRON_LINE"; then
+              echo "Cron entry already installed"
+            else
+              { printf '%s\n' "$CURRENT_CRON" | grep -v 'deploy/run-daily.sh' | grep -v '^$' || true; echo "$CRON_LINE"; } | crontab -
+              echo "Cron entry installed"
+            fi
+            [ "$(crontab -l | grep -c 'deploy/run-daily.sh')" = 1 ] || { echo "::error::expected exactly one run-daily.sh cron entry"; crontab -l; exit 1; }
 
             echo "Waiting for the renderer..."
             up=0
