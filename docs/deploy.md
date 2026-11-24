@@ -27,13 +27,15 @@ The marketing system has its **own droplet** (Ubuntu 24.04, SGP1, at least 2 vCP
    scp -r deploy root@<droplet-ip>:/root/
    ssh root@<droplet-ip> "bash /root/deploy/server-setup.sh \"$(cat marketing-deploy-key.pub)\""
    ```
-   It installs everything on a bare droplet: security updates, a 2 GB swap file, the firewall (SSH, 80 and 443 only), a `deploy` user (SSH key only, no sudo), Node 22 with nvm, PM2 (restarts after a reboot, with log rotation), FFmpeg, Edge TTS, Chromium's libraries, Caddy with `deploy/Caddyfile`, and `/srv/marketing-linkbot`. You can run it again safely.
-4. **Secrets:** as `deploy`, fill in `/srv/marketing-linkbot/.env` from `.env.example` (the script creates it empty with `chmod 600`). On the server, set:
+   It installs everything on a bare droplet: security updates, a 2 GB swap file, the firewall (SSH, 80 and 443 only), a `hex` user (SSH key only, sudo with a password), Node 22 with nvm, PM2 (restarts after a reboot, with log rotation), FFmpeg, Edge TTS, Chromium's libraries, Caddy with `deploy/Caddyfile`, and `/srv/marketing-linkbot`.
+
+   At the end it **turns off root login** and password logins (SSH keys only), and prints `hex`'s sudo password **once**: save it in the password manager. From then on, log in with `ssh hex@<droplet-ip>` and use `sudo`. To run the script again: `sudo bash ~/deploy/server-setup.sh` (copy `deploy/` to `hex`'s home first). If root has no SSH key of its own (password login), the script leaves root login on and says so, rather than locking you out.
+4. **Secrets:** as `hex`, fill in `/srv/marketing-linkbot/.env` from `.env.example` (the script creates it empty with `chmod 600`). On the server, set:
    - `RENDERER_API_KEY`: `openssl rand -hex 32`. The deploy refuses to run without it, because the renderer would otherwise answer anyone. Put the same value in the n8n credential that calls the renderer.
    - `RENDERER_URL=http://127.0.0.1:8787`
 5. **GitHub secrets** (this repo: Settings → Secrets and variables → Actions). These are separate from the website's `DO_*` secrets, so a deploy can't land on the wrong server:
    - `MARKETING_DO_HOST`: the droplet's IP
-   - `MARKETING_DO_USER`: `deploy`
+   - `MARKETING_DO_USER`: `hex`
    - `MARKETING_DO_SSH_KEY`: the whole contents of `marketing-deploy-key` (the private key). Then delete the file from your PC.
 6. **Optional:** restrict SSH (port 22) to the office IP with a DigitalOcean cloud firewall, and enable DigitalOcean weekly backups.
 

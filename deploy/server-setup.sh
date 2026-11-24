@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # One-time set-up of a NEW Ubuntu 24.04 droplet for the marketing renderer and daily runner (docs/deploy.md).
-# Run as root, from the copied deploy/ folder, with the GitHub Actions public key as the argument:
+# First run: as root, from the copied deploy/ folder, with the GitHub Actions public key as the argument:
 #   bash /root/deploy/server-setup.sh "ssh-ed25519 AAAA... github-actions-marketing"
-# Safe to run again (e.g. to add a newer key or after a Node/Playwright version change).
+# At the end it turns off root login: from then on, log in as hex and use sudo (its password is printed once).
+# Safe to run again as hex: sudo bash ~/deploy/server-setup.sh
 set -euo pipefail
 
-DEPLOY_USER=deploy
+DEPLOY_USER=hex
 APP_DIR=/srv/marketing-linkbot
 NODE_VERSION=22.23.4        # keep in step with .github/workflows/deploy.yml
 NVM_VERSION=v0.40.3
@@ -35,12 +36,18 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw --force enable
 
-echo "== Deploy user '$DEPLOY_USER' (SSH key only, no sudo)"
-id "$DEPLOY_USER" >/dev/null 2>&1 || adduser --disabled-password --gecos "" "$DEPLOY_USER"
+echo "== User '$DEPLOY_USER' (SSH key only; sudo with a password, because root login is turned off below)"
+NEW_PASSWORD=""
+if ! id "$DEPLOY_USER" >/dev/null 2>&1; then
+  adduser --disabled-password --gecos "" "$DEPLOY_USER"
+  NEW_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)"
+  echo "$DEPLOY_USER:$NEW_PASSWORD" | chpasswd
+fi
+usermod -aG sudo "$DEPLOY_USER"
 install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "/home/$DEPLOY_USER/.ssh"
 AUTH="/home/$DEPLOY_USER/.ssh/authorized_keys"
 touch "$AUTH"
-# admins who can log in as root can also log in as deploy
+# admins who can log in as root can also log in as hex (root login is turned off at the end)
 [ -f /root/.ssh/authorized_keys ] && cat /root/.ssh/authorized_keys >> "$AUTH"
 [ -n "$CI_KEY" ] && echo "$CI_KEY" >> "$AUTH"
 sort -u "$AUTH" -o "$AUTH"
@@ -83,8 +90,34 @@ if [ ! -f "$APP_DIR/.env" ]; then
   echo "!! $APP_DIR/.env is empty: fill it in (docs/deploy.md, step 4) before the first deploy."
 fi
 
+echo "== SSH: no root login, no passwords (keys only)"
+# Guard against a lock-out: only when hex has an admin key besides the GitHub Actions one
+ADMIN_KEYS="$(grep -E '^(ssh-|ecdsa-|sk-)' "$AUTH" | grep -cv 'github-actions' || true)"
+if [ "${ADMIN_KEYS:-0}" -ge 1 ]; then
+  # 00- so it wins over DigitalOcean's 50-cloud-init.conf (sshd takes the first value it reads)
+  cat > /etc/ssh/sshd_config.d/00-linkbot-hardening.conf <<'SSHD'
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+SSHD
+  sshd -t || { rm -f /etc/ssh/sshd_config.d/00-linkbot-hardening.conf; echo "!! SSH config check failed, nothing changed"; exit 1; }
+  systemctl reload ssh
+  passwd -l root >/dev/null
+  echo "Root login is off. Log in with: ssh $DEPLOY_USER@<droplet-ip>"
+else
+  echo "!! Root login left ON: $AUTH has no admin key (only the GitHub Actions one, or none)."
+  echo "!! Add your own public key to $AUTH, test 'ssh $DEPLOY_USER@<droplet-ip>', then run this script again."
+fi
+
 echo
 echo "Done."
+if [ -n "$NEW_PASSWORD" ]; then
+  echo
+  echo "################################################################"
+  echo "  sudo password for $DEPLOY_USER (shown once, save it in the password manager):"
+  echo "  $NEW_PASSWORD"
+  echo "################################################################"
+fi
 as_deploy 'echo "node $(node -v) · pm2 $(pm2 -v)"'
 ffmpeg -version | head -1
 caddy version
