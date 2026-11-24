@@ -23,6 +23,8 @@ export const env: Record<string, string | undefined> = { ...loadDotEnv(path.join
 
 export const config = {
   port: Number(env.RENDERER_PORT ?? 8787),
+  /** 127.0.0.1 on the server, so only Caddy (HTTPS) can reach it. */
+  host: env.RENDERER_HOST || '0.0.0.0',
   apiKey: env.RENDERER_API_KEY ?? '',
   outputDir: path.resolve(env.RENDERER_OUTPUT_DIR ?? path.join(RENDERER_DIR, 'out', 'jobs')),
   imageProviders: (env.IMAGE_PROVIDERS ?? 'cloudflare,gemini').split(',').map((s) => s.trim()).filter(Boolean),

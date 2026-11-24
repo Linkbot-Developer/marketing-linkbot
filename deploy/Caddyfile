@@ -1,0 +1,20 @@
+# Add this block to the droplet's /etc/caddy/Caddyfile (next to the linkbot.sg blocks), then:
+#   sudo systemctl reload caddy
+# Needs a DNS A record: renderer.linkbot.sg → the droplet's IP. Caddy gets the HTTPS certificate itself.
+renderer.linkbot.sg {
+    # n8n sends JSON with a few base64 images (the renderer accepts up to 30 MB)
+    request_body {
+        max_size 32MB
+    }
+    header X-Robots-Tag "noindex, nofollow"
+    # the renderer checks the Bearer key on everything except /health
+    # reels can take a few minutes; while a deploy restarts it, a request waits a moment instead of failing
+    reverse_proxy 127.0.0.1:8787 {
+        lb_try_duration 15s
+        lb_try_interval 250ms
+        transport http {
+            read_timeout 10m
+            write_timeout 10m
+        }
+    }
+}

@@ -1,0 +1,192 @@
+name: CI/CD Pipeline
+
+# Same pattern as linkbot-redesign: GitHub builds and tests, copies one file to the droplet,
+# the droplet unpacks it and restarts the renderer under PM2. The server never builds.
+# See docs/deploy.md.
+
+on:
+  push:
+    branches: [ main ]
+    # content drafts and docs don't need a deploy
+    paths:
+      - 'renderer/**'
+      - 'runner/**'
+      - 'templates/**'
+      - 'agents/**'
+      - 'brand/**'
+      - 'CLAUDE.md'
+      - 'scripts/**'
+      - 'package*.json'
+      - 'deploy/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+# one deploy at a time: a second push waits for the first to finish
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  APP_DIR: /srv/marketing-linkbot
+  NOTIFY_URL: https://flow.linkbot.sg/webhook/github/notification
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Save start time
+        id: start_time
+        run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Notify deployment start
+        run: |
+          curl -sS -X POST "$NOTIFY_URL" -H "Content-Type: application/json" -d '{
+            "project": "Linkbot Marketing",
+            "status": "started",
+            "repo": "${{ github.repository }}",
+            "repo_url": "https://github.com/${{ github.repository }}",
+            "branch": "${{ github.ref_name }}",
+            "commit": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
+            "actor": "${{ github.actor }}",
+            "workflow": "${{ github.workflow }}",
+            "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }' || true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            renderer/package-lock.json
+            runner/package-lock.json
+
+      # node_modules are built here on Linux x64 (same as the droplet) and shipped in the bundle.
+      # tsx is a dev dependency and runs the TypeScript at start-up, so dev dependencies are kept.
+      - name: Install dependencies
+        run: |
+          npm ci --prefer-offline --no-audit --no-fund
+          npm ci --prefer-offline --no-audit --no-fund --prefix renderer
+          npm ci --prefer-offline --no-audit --no-fund --prefix runner
+
+      - name: Typecheck and test
+        run: |
+          npm run typecheck --prefix renderer
+          npm test --prefix renderer
+          npm run typecheck --prefix runner
+
+      - name: Bundle deployment files
+        run: |
+          # code, prompts, templates and brand files only; the brief, content drafts and docs stay in GitHub
+          tar -czf release.tar.gz \
+            --exclude='./.git' --exclude='./.github' --exclude='./brief' --exclude='./content' \
+            --exclude='./renderer/out' --exclude='./runner/out' --exclude='./renderer/sandbox' \
+            --exclude='./.env' --exclude='./.env.*' --exclude='./data' \
+            --exclude='./n8n/.credential-ids.json' --exclude='./n8n/.callback-url.txt' \
+            .
+
+          # the server extracts this over $APP_DIR: refuse to ship anything that would replace its own state
+          # (secrets, render outputs, the AI quota ledger).
+          if tar -tzf release.tar.gz | grep -E '^\./(\.env|data(/|$)|runner/out(/|$)|renderer/out(/|$))'; then
+            echo "::error::The bundle contains server state (see the paths above); refusing to deploy."
+            exit 1
+          fi
+          ls -lh release.tar.gz
+
+      - name: Upload bundle to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          source: "release.tar.gz"
+          target: ${{ env.APP_DIR }}
+
+      - name: Deploy on server
+        uses: appleboy/ssh-action@v0.1.6
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          envs: APP_DIR
+          script: |
+            set -e
+            cd "$APP_DIR"
+
+            # load nvm & add node/pm2 to PATH
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && nvm use default
+            export PATH="$HOME/.local/bin:$PATH"   # edge-tts (pipx)
+            echo "Node $(node -v) · PM2 $(pm2 -v)"
+
+            # .env is created by hand once (docs/deploy.md) and never shipped
+            if [ ! -f .env ]; then
+              echo "::error::$APP_DIR/.env is missing. Create it from .env.example first (docs/deploy.md)."
+              exit 1
+            fi
+
+            echo "Replacing the code (keeps .env and data/)..."
+            rm -rf renderer runner templates agents brand scripts n8n deploy docs node_modules \
+                   CLAUDE.md README.md package.json package-lock.json .mcp.json .gitignore .gitattributes .env.example
+            tar -xzf release.tar.gz
+            rm release.tar.gz
+
+            # state that must survive deploys lives in data/
+            mkdir -p data/renderer-jobs data/runner-out logs
+            ln -sfn ../data/runner-out runner/out    # the runner's free-AI-quota ledger
+
+            # Chromium for Playwright: a no-op when this version is already installed
+            (cd renderer && npx playwright install chromium)
+
+            echo "Restarting the renderer..."
+            pm2 startOrReload deploy/ecosystem.config.cjs --update-env
+            pm2 save
+
+            # the daily runner: an hourly cron entry; run-daily.sh only acts at 17:00 Singapore time
+            CRON_LINE="5 * * * * $APP_DIR/deploy/run-daily.sh >> $APP_DIR/logs/runner.log 2>&1"
+            chmod +x deploy/run-daily.sh
+            ( crontab -l 2>/dev/null | grep -v 'deploy/run-daily.sh' ; echo "$CRON_LINE" ) | crontab -
+
+            echo "Waiting for the renderer..."
+            up=0
+            for _ in $(seq 1 30); do
+              if curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:8787/health; then up=1; break; fi
+              sleep 1
+            done
+            if [ "$up" = 0 ]; then
+              echo "The renderer did not answer. Last log lines:"
+              pm2 logs linkbot-renderer --lines 30 --nostream
+              exit 1
+            fi
+            curl -fsS http://127.0.0.1:8787/health; echo
+
+      - name: Calculate duration
+        id: duration
+        if: always()
+        run: |
+          end=$(date +%s)
+          start=${{ steps.start_time.outputs.start }}
+          echo "seconds=$((end-start))" >> $GITHUB_OUTPUT
+
+      - name: Notify deployment result
+        if: always()
+        run: |
+          curl -sS -X POST "$NOTIFY_URL" -H "Content-Type: application/json" -d '{
+            "project": "Linkbot Marketing",
+            "status": "${{ job.status == 'success' && 'success' || 'failed' }}",
+            "duration": "${{ steps.duration.outputs.seconds }}",
+            "repo": "${{ github.repository }}",
+            "repo_url": "https://github.com/${{ github.repository }}",
+            "branch": "${{ github.ref_name }}",
+            "commit": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
+            "actor": "${{ github.actor }}",
+            "workflow": "${{ github.workflow }}",
+            "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }' || true
