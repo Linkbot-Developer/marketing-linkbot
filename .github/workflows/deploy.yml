@@ -156,6 +156,7 @@ jobs:
 
             # the daily runner: one hourly cron entry; run-daily.sh only acts at 17:00 Singapore time.
             # Left alone when it's already there; otherwise any older run-daily.sh entry is replaced, never added to.
+            # Disable create cron
             #CRON_LINE="5 * * * * $APP_DIR/deploy/run-daily.sh >> $APP_DIR/logs/runner.log 2>&1"
             #chmod +x deploy/run-daily.sh
             #CURRENT_CRON="$(crontab -l 2>/dev/null || true)"
