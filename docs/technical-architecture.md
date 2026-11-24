@@ -64,7 +64,7 @@ marketing-linkbot/
 3. **Test:** `npm test` runs unit tests and image snapshots, so a template change that breaks the layout gets caught.
 4. **Build workflows in n8n's editor** (browser), test them on seed records, then **export to `n8n/workflows/`** and commit.
 5. **Commit and push to GitHub.** Small commits per feature (spec §9).
-6. **Deploy to DigitalOcean:** `git pull && docker compose up -d --build` on the server (later automated with GitHub Actions).
+6. **Deploy to DigitalOcean:** automatic on push to `main` (GitHub Actions → PM2 behind Caddy, the same pattern as the website). See [`deploy.md`](deploy.md).
 
 ## 5. What your PC needs
 

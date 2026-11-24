@@ -32,7 +32,7 @@ What lives where, and what each person must do once:
 | API keys and tokens | `.env` on that PC only | ❌ never | Get your own keys or receive `.env` securely, never by chat or email |
 
 Then run `npm run check` to confirm every connection.
-On the production server none of this is needed per person: the renderer's Docker image bundles Chromium, FFmpeg, HyperFrames and Edge TTS.
+On the production server none of this is needed per person: see [`docs/deploy.md`](docs/deploy.md). A push to `main` deploys the renderer and the daily runner to the DigitalOcean droplet (GitHub Actions → PM2, behind Caddy).
 
 **Windows PowerShell says `npm.ps1 cannot be loaded`?** Use `npm.cmd run check`, or run the command in Command Prompt or Git Bash. To fix it permanently for your user, an admin or you can run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` in PowerShell.
 

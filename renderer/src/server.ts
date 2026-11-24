@@ -98,7 +98,7 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(config.port, () => console.log(`Linkbot renderer ${VERSION} listening on :${config.port}`));
+server.listen(config.port, config.host, () => console.log(`Linkbot renderer ${VERSION} listening on ${config.host}:${config.port}`));
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, async () => {
