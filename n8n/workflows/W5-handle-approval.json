@@ -432,6 +432,7 @@
   "settings": {
     "executionOrder": "v1",
     "timezone": "Asia/Singapore",
-    "saveManualExecutions": true
+    "saveManualExecutions": true,
+    "errorWorkflow": "<W11 id>"
   }
 }

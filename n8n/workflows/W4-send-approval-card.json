@@ -2,27 +2,44 @@
   "name": "[Marketing] W4 - Send approval card",
   "nodes": [
     {
-      "id": "01-every-10-minutes",
-      "name": "Every 10 minutes",
+      "id": "01-runner-post-ready",
+      "name": "Runner: post ready",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "marketing-w4-<N8N_WEBHOOK_SECRET>",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "02-every-hour-backup-",
+      "name": "Every hour (backup)",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
         0,
-        300
+        400
       ],
       "parameters": {
         "rule": {
           "interval": [
             {
-              "field": "minutes",
-              "minutesInterval": 10
+              "field": "hours",
+              "hoursInterval": 1,
+              "triggerAtMinute": 5
             }
           ]
         }
       }
     },
     {
-      "id": "02-lark-token",
+      "id": "03-lark-token",
       "name": "Lark token",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -48,7 +65,7 @@
       }
     },
     {
-      "id": "03-read-settings",
+      "id": "04-read-settings",
       "name": "Read settings",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -75,7 +92,7 @@
       }
     },
     {
-      "id": "04-find-posts-awaiting-a-card",
+      "id": "05-find-posts-awaiting-a-card",
       "name": "Find posts awaiting a card",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -102,7 +119,7 @@
       }
     },
     {
-      "id": "05-one-item-per-post",
+      "id": "06-one-item-per-post",
       "name": "One item per post",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -116,7 +133,7 @@
       }
     },
     {
-      "id": "06-download-preview",
+      "id": "07-download-preview",
       "name": "Download preview",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -148,7 +165,7 @@
       "alwaysOutputData": true
     },
     {
-      "id": "07-upload-preview-to-lark-chat",
+      "id": "08-upload-preview-to-lark-chat",
       "name": "Upload preview to Lark chat",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -189,7 +206,7 @@
       "alwaysOutputData": true
     },
     {
-      "id": "08-build-card",
+      "id": "09-build-card",
       "name": "Build card",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -203,7 +220,7 @@
       }
     },
     {
-      "id": "09-send-card",
+      "id": "10-send-card",
       "name": "Send card",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -230,7 +247,7 @@
       }
     },
     {
-      "id": "10-save-card-id-on-the-post",
+      "id": "11-save-card-id-on-the-post",
       "name": "Save card id on the post",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -258,17 +275,6 @@
     }
   ],
   "connections": {
-    "Every 10 minutes": {
-      "main": [
-        [
-          {
-            "node": "Lark token",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Lark token": {
       "main": [
         [
@@ -356,11 +362,34 @@
           }
         ]
       ]
+    },
+    "Runner: post ready": {
+      "main": [
+        [
+          {
+            "node": "Lark token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every hour (backup)": {
+      "main": [
+        [
+          {
+            "node": "Lark token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
     "executionOrder": "v1",
     "timezone": "Asia/Singapore",
-    "saveManualExecutions": true
+    "saveManualExecutions": true,
+    "errorWorkflow": "<W11 id>"
   }
 }

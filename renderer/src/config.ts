@@ -18,7 +18,7 @@ function loadDotEnv(file: string): Record<string, string> {
   return out;
 }
 
-/** Real environment variables win over .env (so Docker/env injection works on the server). */
+/** Real environment variables win over .env (so PM2's env settings win on the server). */
 export const env: Record<string, string | undefined> = { ...loadDotEnv(path.join(REPO_DIR, '.env')), ...process.env };
 
 export const config = {
@@ -61,7 +61,7 @@ function findBinary(name: 'ffmpeg' | 'ffprobe'): string {
 export const bin = {
   ffmpeg: findBinary('ffmpeg'),
   ffprobe: findBinary('ffprobe'),
-  /** Edge TTS: official Python CLI. Windows uses the `py` launcher; Linux/Docker uses `edge-tts`. */
+  /** Edge TTS: official Python CLI. Windows uses the `py` launcher; Linux uses `edge-tts`. */
   edgeTts: process.platform === 'win32' ? { cmd: 'py', pre: ['-m', 'edge_tts'] } : { cmd: 'edge-tts', pre: [] as string[] },
   hyperframes: path.join(RENDERER_DIR, 'node_modules', 'hyperframes', 'bin', 'hyperframes.mjs'),
 };

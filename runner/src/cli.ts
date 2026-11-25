@@ -4,8 +4,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { processPost } from './pipeline.js';
-import { callStats, quota, QuotaExhaustedError, remainingCallsToday, usageToday } from './ai.js';
-import { readSettings, searchRecords } from './lark.js';
+import { AiUnavailableError, callStats, quota, QuotaExhaustedError, remainingCallsToday, usageToday } from './ai.js';
+import { readSettings, searchRecords, sendAlert, updateRecord } from './lark.js';
 import { REPO_DIR, env, required } from './env.js';
 
 const args = process.argv.slice(2);
@@ -34,11 +34,23 @@ const planDaysAhead = Number(settings.plan_days_ahead ?? 7);
 // `planned` posts, plus `rejected` ones (rewritten with the approver's feedback) while attempts remain.
 // When posts are named explicitly, `failed` ones can be retried too.
 let records = await searchRecords(required('LARK_TABLE_CONTENT_ID'));
+// A post left at `generating` means an earlier run was interrupted (restart, PC off). Only one daily run
+// happens at a time, so in daily mode put those back in the queue.
+if (daily && !dry) {
+  for (const r of records.filter((x) => x.fields.status === 'generating')) {
+    const back = r.fields.rejection_reason ? 'rejected' : 'planned';
+    await updateRecord(required('LARK_TABLE_CONTENT_ID'), r.id, { status: back, error: '' });
+    r.fields.status = back;
+    console.log(`Recovered ${r.fields.post_id}: interrupted earlier, back to ${back}`);
+  }
+}
 records = records.filter((r) => r.fields.status === 'planned'
   || (r.fields.status === 'rejected' && Number(r.fields.attempts ?? 0) < maxAttempts * 2)
   || (posts.length && r.fields.status === 'failed'));
 if (posts.length) records = records.filter((r) => posts.includes(String(r.fields.post_id)));
 if (daily) records = records.filter((r) => !r.fields.scheduled_at || Number(r.fields.scheduled_at) <= Date.now() + daysAhead * DAY);
+// Past its approval deadline: n8n W7 skips it, so don't spend AI quota on it.
+records = records.filter((r) => !r.fields.approval_deadline || Number(r.fields.approval_deadline) > Date.now());
 records.sort((a, b) => Number(a.fields.scheduled_at ?? 0) - Number(b.fields.scheduled_at ?? 0));
 
 // --- Fit the batch to today's AI quota --------------------------------------
@@ -87,6 +99,10 @@ if (!(await healthy())) {
 // --- Run --------------------------------------------------------------------
 console.log(`${dry ? '[DRY RUN, no Base writes] ' : ''}Generating ${records.length} post(s) · max ${maxAttempts} attempts · AI: ${env.AI_TEXT_PROVIDER ?? 'gemini'}`);
 const summary: string[] = [];
+// Ask n8n W4 to send the approval card straight away (it also checks hourly as a backup).
+const w4Hook = env.N8N_BASE_URL && env.N8N_WEBHOOK_SECRET ? `${env.N8N_BASE_URL.replace(/\/$/, '')}/webhook/marketing-w4-${env.N8N_WEBHOOK_SECRET}` : '';
+const cardNow = () => (w4Hook && !dry ? fetch(w4Hook, { method: 'POST' }).catch(() => undefined) : undefined);
+const problems: string[] = [];
 try {
   for (const rec of records) {
     const id = String(rec.fields.post_id);
@@ -95,16 +111,23 @@ try {
     try {
       const status = await processPost(rec, { dry, maxAttempts, log });
       summary.push(`${status === 'pending_approval' ? '✅' : '❌'} ${id}: ${status} (${((Date.now() - t) / 1000).toFixed(0)}s)`);
+      if (status === 'pending_approval') await cardNow();
+      else problems.push(`${id} failed after ${maxAttempts} attempts. See its "error" field in Lark Base.`);
     } catch (e) {
       if (e instanceof QuotaExhaustedError) {
-        summary.push(`⏸ ${id}: back to planned (AI quota used up)`, `⏸ Stopped: ${e.message}`);
+        summary.push(`⏸ ${id}: left as it was (${e instanceof AiUnavailableError ? 'AI provider overloaded' : 'AI quota used up'})`, `⏸ Stopped: ${e.message}`);
+        const waiting = records.length - records.indexOf(rec);
+        if (late.length) problems.push(`AI quota ran out with ${waiting} post(s) still waiting, including some close to their approval deadline (${late.map((r) => r.fields.post_id).join(', ')}).`);
         break;
       }
+      problems.push(`${id}: the runner crashed (${(e as Error).message.slice(0, 300)}).`);
+      if (!dry) await sendAlert(`⚠️ Content runner: ${problems.join('\n')}`);
       throw e;
     }
   }
 } finally {
   started?.kill();
 }
+if (problems.length && !dry) await sendAlert(`⚠️ Content runner:\n${problems.join('\n')}`);
 const left = remainingCallsToday();
 console.log(`\n${summary.join('\n')}\nAI calls this run: ${callStats.calls}${Number.isFinite(left) ? ` · left today: ${left}` : ''}`);

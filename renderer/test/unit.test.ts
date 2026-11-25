@@ -22,8 +22,9 @@ describe('templates', () => {
 });
 
 describe('brand rules in image prompts', () => {
-  it('always forbids text, logos, clocks and sci-fi', () => {
-    for (const rule of ['No readable text', 'no logos', 'No clocks', 'No robots']) expect(IMAGE_RULES).toContain(rule);
+  it('always forbids text, logos and sci-fi, and never names clocks (FLUX draws what is named)', () => {
+    for (const rule of ['No readable text', 'no logos', 'No robots', 'plain painted wall']) expect(IMAGE_RULES).toContain(rule);
+    expect(IMAGE_RULES).not.toMatch(/clock/i);
   });
   it('strips times and clocks from briefs so the model cannot draw them', () => {
     const out = sanitiseBrief('A tired worker at 5pm on Friday, a wall clock showing 5:00 PM behind, 6 o\'clock light');

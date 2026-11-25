@@ -34,7 +34,7 @@ Plan → Generate → Quality check → [HUMAN APPROVES] → Schedule & publish 
 | | **Lark bot** (custom app `cli_…` in `.env`) | Approval cards (Approve / Reject / Regenerate), alerts, report summaries | Lark plan |
 | | **Lark Base Dashboard** | Live analytics | Lark plan |
 | Orchestrator | **n8n Cloud** (decided 23 Nov 2026; public URL, so Lark card clicks and webhooks reach it directly) | All schedules, webhooks, glue | n8n Cloud plan |
-| Server | **DigitalOcean droplet** (company's, to confirm), Docker Compose | Renderer service (and n8n if self-hosted) | Existing |
+| Server | **DigitalOcean droplet**, dedicated, 1 vCPU / 1 GB to start + 2 GB swap. Installed natively (no Docker): Node 22 + PM2, Caddy. Daily generation is started by n8n W2 (no server cron). Deployed by GitHub Actions (`docs/deploy.md`) | Renderer API and the daily runner | ~US$6/month (US$12 at 2 GB) |
 | Text "brain" | **Claude API**: `claude-opus-5-5` (model ID from env) | Planning, copywriting, brand/QC check (text **and** vision), reports | Pay per use (~US$10–20/month estimated, §6) |
 | Images | **Gemini API** image model (free tier, **on trial**) → fallback **Cloudflare Workers AI** | Image generation | Free tiers |
 | Video | **HyperFrames** (+ FFmpeg, Node ≥ 22), **to be verified in phase 2** | Reels, TikTok and Stories from HTML compositions | Free / OSS |
@@ -223,10 +223,11 @@ Verify every endpoint, scope and payload against current official docs before im
 ├── agents/                       # prompts: planner, copywriter, brand-checker, analyst (+ schemas/)
 ├── content/                      # hand-written and test batches
 ├── brand/, brief/                # brand kit and master brief
-├── docker-compose.yml            # renderer (+ n8n if self-hosted)
+├── .github/workflows/deploy.yml  # CI/CD: test, bundle, deploy to the droplet
 ├── .env.example                  # every variable, no values
 ├── n8n/workflows/                # exported workflows
-├── renderer/                     # rendering microservice (src/, Dockerfile, package.json)
+├── renderer/                     # rendering microservice (src/, package.json)
+├── deploy/                       # server-setup.sh, PM2 config, Caddyfile, run-daily.sh
 ├── templates/                    # brand/, carousel/, video/
 ├── lark/                         # base-schema.md, cards/ (approval, alert, report)
 └── scripts/                      # setup helpers (lark-mcp.mjs, tests)
@@ -285,3 +286,8 @@ Build one phase at a time, each working end to end. At the end of each: how to t
   - **n8n Cloud chosen** as the orchestrator; it has a public URL, so the Lark card callbacks and webhooks can be built now. Only the renderer still waits for the droplet.
   - **Daily AI quota planning:** the runner counts free Gemini requests per day (`runner/out/ai-usage.json`) and fits each run to what's left. The Settings row `ai_quota` controls it. The default plan of 11 posts a week needs about 55 requests, against about 530 free a week.
   - **The Claude provider is implemented** (`claude-opus-5-5`, server-side refusal fallback) but stays off until billing is approved.
+- **24 Nov 2026:**
+  - **n8n built so far:** W4 (approval cards to the Marketing Alerts group; the runner triggers it, with an hourly backup), W5 (card clicks: approver only; acknowledges Lark within 3 s, then updates the post and the card), W7 (hourly deadline guard: overdue posts become `skipped`) and W11 (error alerts to the group). The 10-minute polling was dropped to save executions on the shared instance.
+  - Daily generation runs from a Windows scheduled task (16:30 PC time) until the renderer is on the server.
+  - Image prompts no longer mention clocks at all: FLUX draws whatever is named, even after "no".
+  - **Deployment decided (PR #1 by the supervisor):** no Docker. The droplet runs Node 22 + PM2 (renderer) and Caddy (HTTPS); n8n W2 starts the daily runner at 17:00 SGT through `POST /jobs/daily` (no server cron), with a 2 GB swap file. GitHub Actions tests, bundles and deploys on every push to `main`, so the server never builds. Start at 1 vCPU / 1 GB and resize to 2 GB only if video renders struggle.

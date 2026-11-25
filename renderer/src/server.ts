@@ -2,6 +2,7 @@
 //   GET  /health                       → { ok, version }                (no auth)
 //   POST /render/image|carousel|story|reel  (JSON body, Bearer auth)  → { jobId, files[], meta }
 //   GET  /files/<jobId>/<name>         → the rendered file              (Bearer auth)
+//   POST /jobs/daily · GET /jobs/<id>  → start / check today's generation (n8n W2; Bearer auth)
 // Renders run one at a time (a queue), because video rendering is CPU-heavy.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
@@ -15,6 +16,7 @@ import { renderCarousel } from './render/carousel.js';
 import { renderImage } from './render/image.js';
 import { renderReel } from './render/reel.js';
 import { renderStory } from './render/story.js';
+import { jobView, startDaily } from './jobs.js';
 
 const VERSION = '0.1.0';
 const MAX_BODY = 30 * 1024 * 1024; // allows a few base64 images
@@ -78,6 +80,18 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, version: VERSION });
     if (!authorised(req)) return send(res, 401, { error: 'Unauthorised' });
 
+    // Today's content generation, started by n8n (W2). It runs in the background; the reply comes at once.
+    if (req.method === 'POST' && url.pathname === '/jobs/daily') {
+      const { started, job } = startDaily();
+      console.log(`/jobs/daily ${started ? 'started' : 'already running'} ${job.id}`);
+      return send(res, started ? 202 : 409, { jobId: job.id, status: job.status, startedAt: job.startedAt });
+    }
+    const jobMatch = url.pathname.match(/^\/jobs\/([\w-]+)$/);
+    if (req.method === 'GET' && jobMatch) {
+      const view = jobView(jobMatch[1]);
+      return view ? send(res, 200, view) : send(res, 404, { error: 'Unknown job' });
+    }
+
     const fileMatch = url.pathname.match(/^\/files\/([^/]+)\/([^/]+)$/);
     if (req.method === 'GET' && fileMatch) return serveFile(res, fileMatch[1], fileMatch[2]);
 
@@ -97,6 +111,12 @@ const server = createServer(async (req, res) => {
     return send(res, err.status ?? 500, { error: err.message });
   }
 });
+
+// On the server the API must never be open: refuse to start without a key (the deploy checks this too).
+if (process.env.NODE_ENV === 'production' && !config.apiKey) {
+  console.error('RENDERER_API_KEY is empty. Set it in .env before starting in production.');
+  process.exit(1);
+}
 
 server.listen(config.port, config.host, () => console.log(`Linkbot renderer ${VERSION} listening on ${config.host}:${config.port}`));
 

@@ -6,7 +6,7 @@ Marketing workspace for **Linkbot**: content, campaigns, scripts and automations
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/beatricebot/marketing-linkbot.git
+   git clone https://github.com/Linkbot-Developer/marketing-linkbot.git
    ```
 2. Copy `.env.example` to `.env` and fill in the API keys and tokens you need.
    `.env` is git-ignored and must never be committed.

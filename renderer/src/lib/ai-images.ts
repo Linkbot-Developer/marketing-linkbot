@@ -7,9 +7,10 @@ import { config } from '../config.js';
 // Anything that still slips through is caught by the visual QC step (W3) and regenerated.
 export const IMAGE_RULES =
   'Devices are plain and unbranded: matte laptop lids with no emblem; any visible screen shows only a soft plain blue gradient, or faces away from the camera. ' +
-  'Walls are bare or have soft-focus plants and windows only; no wall clocks anywhere in the room. ' +
+  // FLUX ignores negatives and tends to draw whatever is named, so the background is described positively only.
+  'Close, shallow-depth-of-field framing; the background is a softly blurred plain painted wall, a large window with daylight, or green plants. ' +
   'No readable text, no letters or numbers, no logos or brand marks, no watermarks. ' +
-  'No clocks showing a specific time. No robots, no sci-fi, no futuristic AI imagery.';
+  'No robots, no sci-fi, no futuristic AI imagery.';
 
 export interface GeneratedImage {
   buf: Buffer;

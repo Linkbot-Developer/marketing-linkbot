@@ -8,13 +8,16 @@ import { fileURLToPath } from 'node:url';
 import { base, env, n8n } from './api.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const cred = JSON.parse(readFileSync(path.join(here, '.credential-ids.json'), 'utf8')).larkApp;
+const credIds = JSON.parse(readFileSync(path.join(here, '.credential-ids.json'), 'utf8'));
+const cred = credIds.larkApp;
+const RENDERER_PUBLIC = (env.RENDERER_PUBLIC_URL || 'https://renderer.linkbot.sg').replace(/\/$/, '');
 const LARK = 'https://open.larksuite.com/open-apis';
 const APP = env.LARK_BASE_APP_TOKEN;
 const CONTENT = env.LARK_TABLE_CONTENT_ID;
 const SETTINGS = env.LARK_TABLE_SETTINGS_ID;
 const BASE_LINK = `https://sglinkbot.sg.larksuite.com/base/${APP}?table=${CONTENT}`;
 const HOOK_PATH = `marketing-lark-card-${env.N8N_WEBHOOK_SECRET}`;
+const W4_HOOK = `marketing-w4-${env.N8N_WEBHOOK_SECRET}`; // the runner calls this when a post is ready
 if (!env.N8N_WEBHOOK_SECRET) throw new Error('N8N_WEBHOOK_SECRET is empty in .env');
 
 // ---------- node helpers ----------
@@ -49,7 +52,9 @@ for (const r of $('Read settings').first().json.data.items ?? []) {
 const w4 = {
   name: '[Marketing] W4 - Send approval card',
   nodes: [
-    { name: 'Every 10 minutes', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: pos(0), parameters: { rule: { interval: [{ field: 'minutes', minutesInterval: 10 }] } } },
+    // Main trigger: the runner calls this webhook as soon as a post is ready. Hourly run = backup.
+    { name: 'Runner: post ready', type: 'n8n-nodes-base.webhook', typeVersion: 2, position: [0, 200], parameters: { httpMethod: 'POST', path: W4_HOOK, responseMode: 'onReceived', options: {} } },
+    { name: 'Every hour (backup)', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: [0, 400], parameters: { rule: { interval: [{ field: 'hours', hoursInterval: 1, triggerAtMinute: 5 }] } } },
     larkToken(220),
     readSettings(440),
     http('Find posts awaiting a card', 660, {
@@ -117,7 +122,11 @@ return { json: { record_id: p.record_id, receive_type: p.receive_type, receive_i
       jsonBody: '={{ JSON.stringify({ fields: { card_message_id: $json.data.message_id } }) }}' }),
   ],
 };
-w4.connections = chain(...w4.nodes.map((n) => n.name));
+w4.connections = {
+  ...chain(...w4.nodes.slice(2).map((n) => n.name)),
+  'Runner: post ready': { main: [[{ node: 'Lark token', type: 'main', index: 0 }]] },
+  'Every hour (backup)': { main: [[{ node: 'Lark token', type: 'main', index: 0 }]] },
+};
 
 // ---------- W5 - Handle approval ----------
 const DECIDE_JS = `${SETTINGS_JS}
@@ -196,22 +205,117 @@ return [{ json: { kind: 'click', action: v.action, record_id: v.record_id, post_
 };
 w5.nodes[0].webhookId = undefined; // let n8n assign one
 
+// ---------- W2 - Daily generation ----------
+// Starts today's content generation on the server (renderer POST /jobs/daily → deploy/run-daily.sh).
+// Replaces a server cron. Stays off until the droplet is live (docs/deploy.md). Failures reach W11.
+const w2 = {
+  name: '[Marketing] W2 - Daily generation',
+  nodes: [
+    { name: 'Every day 17:00 SGT', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: pos(0),
+      parameters: { rule: { interval: [{ field: 'days', daysInterval: 1, triggerAtHour: 17, triggerAtMinute: 0 }] } } },
+    { name: 'Start generation on the server', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: pos(220),
+      parameters: { method: 'POST', url: `${RENDERER_PUBLIC}/jobs/daily`, authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth',
+        options: { timeout: 30000, response: { response: { fullResponse: true, neverError: true } } } },
+      credentials: { httpHeaderAuth: { id: credIds.renderer?.id, name: credIds.renderer?.name } } },
+    code('Check the reply', 440, `
+const r = $input.first().json;
+// 202 = started; 409 = a run is already going (fine). Anything else is an error, so W11 alerts the group.
+if (r.statusCode === 202 || r.statusCode === 409) return [{ json: { ok: true, status: r.statusCode, job: r.body } }];
+throw new Error('The server did not start the daily generation (HTTP ' + r.statusCode + '): ' + JSON.stringify(r.body ?? '').slice(0, 300));`),
+  ],
+};
+w2.connections = chain(...w2.nodes.map((n) => n.name));
+
+// ---------- W11 - Error alerts ----------
+// Every [Marketing] workflow names W11 as its error workflow; a failure posts a short alert to the alerts group.
+const w11 = {
+  name: '[Marketing] W11 - Error alerts',
+  nodes: [
+    { name: 'A marketing workflow failed', type: 'n8n-nodes-base.errorTrigger', typeVersion: 1, position: pos(0), parameters: {} },
+    larkToken(220),
+    readSettings(440),
+    code('Write the alert', 660, `${SETTINGS_JS}
+const e = $('A marketing workflow failed').first().json;
+const chat = settings.alerts_chat?.chat_id;
+if (!chat) throw new Error('Settings row "alerts_chat" has no chat_id');
+const msg = String(e.execution?.error?.message ?? 'Unknown error').replace(/t-[A-Za-z0-9]{20,}/g, '[token]').slice(0, 400);
+const text = '⚠️ ' + (e.workflow?.name ?? 'A marketing workflow') + ' failed'
+  + (e.execution?.lastNodeExecuted ? ' at "' + e.execution.lastNodeExecuted + '"' : '') + '.\\n' + msg
+  + (e.execution?.url ? '\\nDetails: ' + e.execution.url : '');
+return [{ json: { chat, text } }];`),
+    http('Post to the alerts group', 880, { method: 'POST', url: `${LARK}/im/v1/messages?receive_id_type=chat_id`, sendBody: true, specifyBody: 'json',
+      jsonBody: '={{ JSON.stringify({ receive_id: $json.chat, msg_type: "text", content: JSON.stringify({ text: $json.text }) }) }}' }),
+  ],
+};
+w11.connections = chain(...w11.nodes.map((n) => n.name));
+
+// ---------- W7 - Deadline guard ----------
+// Hourly. A post not approved by its approval_deadline (scheduled_at minus approval_lead_hours) is skipped:
+// never published, card greyed out, group told. Planned or rejected posts past the deadline are skipped too,
+// because they could no longer be approved in time.
+const w7 = {
+  name: '[Marketing] W7 - Deadline guard',
+  nodes: [
+    { name: 'Every hour', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: pos(0), parameters: { rule: { interval: [{ field: 'hours', hoursInterval: 1, triggerAtMinute: 35 }] } } },
+    larkToken(220),
+    readSettings(440),
+    http('Find open posts', 660, {
+      method: 'POST', url: `${LARK}/bitable/v1/apps/${APP}/tables/${CONTENT}/records/search?page_size=500`, sendBody: true, specifyBody: 'json',
+      jsonBody: JSON.stringify({ filter: { conjunction: 'or', conditions: ['pending_approval', 'planned', 'rejected', 'failed', 'generating'].map((v) => ({ field_name: 'status', operator: 'is', value: [v] })) } }),
+    }),
+    code('Find overdue posts', 880, `${SETTINGS_JS}
+const leadMs = Number(settings.approval_lead_hours ?? 24) * 3600e3;
+const now = Date.now();
+const chat = settings.alerts_chat?.chat_id ?? '';
+const sgt = (ms) => new Date(ms).toLocaleString('en-GB', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const out = [];
+for (const r of $input.first().json.data?.items ?? []) {
+  const f = r.fields;
+  const status = flat(f.status);
+  const deadline = f.approval_deadline ?? (f.scheduled_at ? f.scheduled_at - leadMs : null);
+  if (!deadline || now <= deadline) continue;
+  if (status === 'generating' && f.scheduled_at && now < f.scheduled_at) continue; // let a running generation finish
+  const postId = flat(f.post_id);
+  const why = status === 'pending_approval' ? 'not approved by the deadline (' + sgt(deadline) + ')' : 'not ready for approval by the deadline (' + sgt(deadline) + '; status was ' + status + ')';
+  const card = {
+    schema: '2.0', config: { update_multi: true },
+    header: { template: 'grey', title: { tag: 'plain_text', content: 'Skipped: ' + postId }, subtitle: { tag: 'plain_text', content: [flat(f.platform), flat(f.format)].filter(Boolean).join(' · ') } },
+    body: { elements: [{ tag: 'markdown', content: 'This post was ' + why + ', so it will not be published.' }, { tag: 'markdown', content: '[Open in Lark Base](${BASE_LINK})' }] },
+  };
+  out.push({ json: { record_id: r.record_id, post_id: postId, card_message_id: flat(f.card_message_id) ?? '', card: JSON.stringify(card), chat,
+    text: '⏰ ' + postId + ' (' + (flat(f.platform) ?? '') + ', planned for ' + (f.scheduled_at ? sgt(f.scheduled_at) : 'no date') + ') was skipped: ' + why + '.', error: 'Skipped: ' + why } });
+}
+return out;`),
+    http('Mark as skipped', 1100, { method: 'PUT', url: `=${LARK}/bitable/v1/apps/${APP}/tables/${CONTENT}/records/{{ $json.record_id }}`, sendBody: true, specifyBody: 'json',
+      jsonBody: '={{ JSON.stringify({ fields: { status: "skipped", error: $json.error } }) }}' }),
+    http('Grey out the card', 1320, { method: 'PATCH', url: "=" + LARK + "/im/v1/messages/{{ $('Find overdue posts').item.json.card_message_id || 'none' }}", sendBody: true, specifyBody: 'json',
+      jsonBody: "={{ JSON.stringify({ content: $('Find overdue posts').item.json.card }) }}" }, { onError: 'continueRegularOutput', alwaysOutputData: true }),
+    http('Tell the group', 1540, { method: 'POST', url: `${LARK}/im/v1/messages?receive_id_type=chat_id`, sendBody: true, specifyBody: 'json',
+      jsonBody: "={{ JSON.stringify({ receive_id: $('Find overdue posts').item.json.chat, msg_type: 'text', content: JSON.stringify({ text: $('Find overdue posts').item.json.text }) }) }}" }),
+  ],
+};
+w7.connections = chain(...w7.nodes.map((n) => n.name));
+
 // ---------- create / update / export ----------
 const settings = { executionOrder: 'v1', timezone: 'Asia/Singapore', saveManualExecutions: true };
 const existing = (await n8n('GET', '/workflows?limit=250')).data;
 const activate = process.argv.includes('--activate') ? process.argv.slice(process.argv.indexOf('--activate') + 1) : [];
 mkdirSync(path.join(here, 'workflows'), { recursive: true });
 
-for (const wf of [w4, w5]) {
+let errorWorkflow = '';
+for (const wf of [w11, w2, w4, w5, w7]) {
   if (!wf.name.startsWith('[Marketing]')) throw new Error('refusing to touch a non-marketing workflow');
-  const body = { name: wf.name, nodes: wf.nodes.map((n, i) => ({ id: `${i + 1}`.padStart(2, '0') + '-' + n.name.replace(/\W+/g, '-').toLowerCase(), ...n })), connections: wf.connections, settings };
+  const wfSettings = wf === w11 ? settings : { ...settings, errorWorkflow };
+  const body = { name: wf.name, nodes: wf.nodes.map((n, i) => ({ id: `${i + 1}`.padStart(2, '0') + '-' + n.name.replace(/\W+/g, '-').toLowerCase(), ...n })), connections: wf.connections, settings: wfSettings };
   const found = existing.find((w) => w.name === wf.name);
   const saved = found ? await n8n('PUT', `/workflows/${found.id}`, body) : await n8n('POST', '/workflows', body);
+  if (wf === w11) errorWorkflow = saved.id;
   const code = wf.name.match(/W\d+/)[0];
-  if (activate.includes(code)) await n8n('POST', `/workflows/${saved.id}/activate`);
-  console.log(`${found ? 'updated' : 'created'} ${wf.name} (${saved.id})${activate.includes(code) ? ' · active' : ''}`);
+  const publish = activate.includes(code) || found?.active; // re-publish live workflows so the new version is the one that runs
+  if (publish) await n8n('POST', `/workflows/${saved.id}/activate`);
+  console.log(`${found ? 'updated' : 'created'} ${wf.name} (${saved.id})${publish ? ' · active' : ''}`);
   // Git copy: the secret webhook path is replaced with a placeholder.
-  const safe = JSON.stringify({ name: body.name, nodes: body.nodes, connections: body.connections, settings }, null, 2).split(env.N8N_WEBHOOK_SECRET).join('<N8N_WEBHOOK_SECRET>');
+  const safe = JSON.stringify({ name: body.name, nodes: body.nodes, connections: body.connections, settings: { ...wfSettings, errorWorkflow: wfSettings.errorWorkflow ? '<W11 id>' : undefined } }, null, 2).split(env.N8N_WEBHOOK_SECRET).join('<N8N_WEBHOOK_SECRET>');
   writeFileSync(path.join(here, 'workflows', `${code}-${wf.name.split(' - ')[1].toLowerCase().replace(/\W+/g, '-')}.json`), safe);
 }
 console.log(`\nLark card callback URL: ${base}/webhook/${HOOK_PATH.replace(env.N8N_WEBHOOK_SECRET, '<secret from .env>')}`);

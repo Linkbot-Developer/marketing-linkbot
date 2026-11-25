@@ -14,8 +14,9 @@ const spec = result.copy.render;
 if (spec.kind !== 'carousel') throw new Error(`rerender currently supports carousels (got ${spec.kind})`);
 
 const base = (env.RENDERER_URL ?? 'http://localhost:8787').replace(/\/$/, '');
+const auth: Record<string, string> = env.RENDERER_API_KEY ? { Authorization: `Bearer ${env.RENDERER_API_KEY}` } : {};
 const res = await fetch(`${base}/render/carousel`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...auth },
   body: JSON.stringify({ postId, slides: normaliseSlides(spec.slides) }),
 });
 const json = (await res.json()) as any;
@@ -26,7 +27,7 @@ const rec = (await searchRecords(table)).find((r) => r.fields.post_id === postId
 if (!rec) throw new Error(`${postId} not found in Base`);
 const preview = [];
 for (const f of json.files) {
-  const data = Buffer.from(await (await fetch(`${base}${f.url}`)).arrayBuffer());
+  const data = Buffer.from(await (await fetch(`${base}${f.url}`, { headers: auth })).arrayBuffer());
   writeFileSync(path.join(dir, `fix_${f.name}`), data);
   preview.push({ file_token: await uploadAttachment(`${postId}_${f.name}`, data, f.mime) });
 }

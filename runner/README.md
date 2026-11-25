@@ -21,6 +21,13 @@ npm run run -- --post W49-IG-02 --dry    # no writes to Lark (files still saved 
 ```
 Settings come from the Lark Base **Settings** table (`max_generation_attempts`, `agent_switches.generator`, `ai_quota`, `plan_days_ahead`, `posts_per_week`) and from `.env` (`AI_TEXT_PROVIDER`, `GEMINI_TEXT_MODELS`, `CLAUDE_MODEL`).
 
+## Runs automatically every day
+**On the server** (once it's live), n8n **W2** starts it at 17:00 Singapore time through the renderer's `POST /jobs/daily`, which runs `deploy/run-daily.sh` (see `docs/deploy.md`).
+
+**Until then**, the Windows scheduled task **"Linkbot Marketing - Daily generation"** runs `scripts/daily-run.ps1` at **16:30 PC time**. That's after the quota reset, and if the PC was off it runs as soon as it's back on. Each day's log is in `out/daily-<date>.log`. To change or stop it, use Task Scheduler. Once the renderer is on the server, n8n takes this over.
+
+After each post is ready, the runner calls n8n W4 so the approval card goes out at once. Failed posts, a crash, or running out of quota with posts close to their deadline are reported in the Marketing Alerts group. Posts already past their approval deadline are left alone, because n8n W7 skips them.
+
 ## Free AI quota and planning
 - Gemini's free tier allows **20 requests per model per day**. With 4 models that's 80 a day, and it resets at midnight US Pacific time, about 16:00 in Singapore.
 - Every call is counted in `out/ai-usage.json`, so several runs on the same day share one budget. A model that reports its daily limit isn't tried again until the reset.

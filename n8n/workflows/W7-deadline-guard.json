@@ -1,0 +1,288 @@
+{
+  "name": "[Marketing] W7 - Deadline guard",
+  "nodes": [
+    {
+      "id": "01-every-hour",
+      "name": "Every hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1,
+              "triggerAtMinute": 35
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "02-lark-token",
+      "name": "Lark token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "XG0w1tH8E3yi3hwH",
+          "name": "[Marketing] Lark app (tenant token)"
+        }
+      }
+    },
+    {
+      "id": "03-read-settings",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/bitable/v1/apps/UnVYbyvm2anu0dsmiQ1lGpcsgRh/tables/tbl1qgo2zdmi4cfY/records/search?page_size=100",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      }
+    },
+    {
+      "id": "04-find-open-posts",
+      "name": "Find open posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/bitable/v1/apps/UnVYbyvm2anu0dsmiQ1lGpcsgRh/tables/tblBUzCMudCo8xPZ/records/search?page_size=500",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"filter\":{\"conjunction\":\"or\",\"conditions\":[{\"field_name\":\"status\",\"operator\":\"is\",\"value\":[\"pending_approval\"]},{\"field_name\":\"status\",\"operator\":\"is\",\"value\":[\"planned\"]},{\"field_name\":\"status\",\"operator\":\"is\",\"value\":[\"rejected\"]},{\"field_name\":\"status\",\"operator\":\"is\",\"value\":[\"failed\"]},{\"field_name\":\"status\",\"operator\":\"is\",\"value\":[\"generating\"]}]}}"
+      }
+    },
+    {
+      "id": "05-find-overdue-posts",
+      "name": "Find overdue posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst flat = (v) => Array.isArray(v) ? v.map((s) => s.text ?? s).join('') : v;\nconst settings = {};\nfor (const r of $('Read settings').first().json.data.items ?? []) {\n  const raw = String(flat(r.fields.value) ?? '');\n  try { settings[flat(r.fields.setting)] = JSON.parse(raw); } catch { settings[flat(r.fields.setting)] = raw; }\n}\nconst leadMs = Number(settings.approval_lead_hours ?? 24) * 3600e3;\nconst now = Date.now();\nconst chat = settings.alerts_chat?.chat_id ?? '';\nconst sgt = (ms) => new Date(ms).toLocaleString('en-GB', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });\nconst out = [];\nfor (const r of $input.first().json.data?.items ?? []) {\n  const f = r.fields;\n  const status = flat(f.status);\n  const deadline = f.approval_deadline ?? (f.scheduled_at ? f.scheduled_at - leadMs : null);\n  if (!deadline || now <= deadline) continue;\n  if (status === 'generating' && f.scheduled_at && now < f.scheduled_at) continue; // let a running generation finish\n  const postId = flat(f.post_id);\n  const why = status === 'pending_approval' ? 'not approved by the deadline (' + sgt(deadline) + ')' : 'not ready for approval by the deadline (' + sgt(deadline) + '; status was ' + status + ')';\n  const card = {\n    schema: '2.0', config: { update_multi: true },\n    header: { template: 'grey', title: { tag: 'plain_text', content: 'Skipped: ' + postId }, subtitle: { tag: 'plain_text', content: [flat(f.platform), flat(f.format)].filter(Boolean).join(' · ') } },\n    body: { elements: [{ tag: 'markdown', content: 'This post was ' + why + ', so it will not be published.' }, { tag: 'markdown', content: '[Open in Lark Base](https://sglinkbot.sg.larksuite.com/base/UnVYbyvm2anu0dsmiQ1lGpcsgRh?table=tblBUzCMudCo8xPZ)' }] },\n  };\n  out.push({ json: { record_id: r.record_id, post_id: postId, card_message_id: flat(f.card_message_id) ?? '', card: JSON.stringify(card), chat,\n    text: '⏰ ' + postId + ' (' + (flat(f.platform) ?? '') + ', planned for ' + (f.scheduled_at ? sgt(f.scheduled_at) : 'no date') + ') was skipped: ' + why + '.', error: 'Skipped: ' + why } });\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "06-mark-as-skipped",
+      "name": "Mark as skipped",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "PUT",
+        "url": "=https://open.larksuite.com/open-apis/bitable/v1/apps/UnVYbyvm2anu0dsmiQ1lGpcsgRh/tables/tblBUzCMudCo8xPZ/records/{{ $json.record_id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: { status: \"skipped\", error: $json.error } }) }}"
+      }
+    },
+    {
+      "id": "07-grey-out-the-card",
+      "name": "Grey out the card",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "PATCH",
+        "url": "=https://open.larksuite.com/open-apis/im/v1/messages/{{ $('Find overdue posts').item.json.card_message_id || 'none' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $('Find overdue posts').item.json.card }) }}"
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "08-tell-the-group",
+      "name": "Tell the group",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type=chat_id",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ receive_id: $('Find overdue posts').item.json.chat, msg_type: 'text', content: JSON.stringify({ text: $('Find overdue posts').item.json.text }) }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Every hour": {
+      "main": [
+        [
+          {
+            "node": "Lark token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lark token": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Find open posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find open posts": {
+      "main": [
+        [
+          {
+            "node": "Find overdue posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find overdue posts": {
+      "main": [
+        [
+          {
+            "node": "Mark as skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as skipped": {
+      "main": [
+        [
+          {
+            "node": "Grey out the card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Grey out the card": {
+      "main": [
+        [
+          {
+            "node": "Tell the group",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Singapore",
+    "saveManualExecutions": true,
+    "errorWorkflow": "<W11 id>"
+  }
+}

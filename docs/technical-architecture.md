@@ -6,8 +6,8 @@ How the system in [`marketing-system-spec.md`](marketing-system-spec.md) is actu
 
 | Part | Built in | Language | Where it runs |
 |---|---|---|---|
-| **Orchestration** (W1–W12: schedules, approvals, publishing, analytics) | **n8n**, a visual workflow editor in the browser | n8n nodes, plus small **JavaScript** "Code" nodes | n8n on the DigitalOcean droplet (Docker) |
-| **Renderer service** (images with overlays, carousels, Reels/TikToks, Stories) | **VS Code** | **TypeScript (Node.js 22)** | Docker container on the same droplet |
+| **Orchestration** (W1–W12: schedules, approvals, publishing, analytics) | **n8n**, a visual workflow editor in the browser | n8n nodes, plus small **JavaScript** "Code" nodes | n8n Cloud (`flow.linkbot.sg`) |
+| **Renderer service** (images with overlays, carousels, Reels/TikToks, Stories) | **VS Code** | **TypeScript (Node.js 22)** | On the droplet, natively: PM2 behind Caddy (`docs/deploy.md`) |
 | **AI agents** (Planner, Copywriter, Brand Checker, Analyst) | VS Code (prompts as Markdown, plus JSON schemas) | Markdown / JSON; called from n8n via the Claude API | Claude API |
 | **Templates** (brand theme, carousel slides, video scenes) | VS Code | **HTML + CSS** (HyperFrames compositions for video) | Inside the renderer |
 | **Set-up and test scripts** | VS Code | TypeScript / JavaScript (Node) | Your PC |
@@ -49,12 +49,11 @@ marketing-linkbot/
 ├── renderer/            # TypeScript service: src/, templates are loaded from ../templates
 │   ├── src/server.ts    # HTTP API: /health, /render/*
 │   ├── src/render/      # image.ts, carousel.ts, reel.ts, story.ts
-│   ├── Dockerfile       # Node 22 + Chromium (Playwright) + FFmpeg + Python edge-tts + HyperFrames
 │   └── test/            # vitest + snapshot images
 ├── templates/brand|carousel|video/
 ├── agents/              # prompts + schemas/ (JSON Schema per agent output)
 ├── n8n/workflows/       # exported workflow JSON (W1–W12)
-├── docker-compose.yml   # n8n + renderer (+ Postgres for n8n)
+├── deploy/            # server-setup.sh, PM2 config, Caddyfile, run-daily.sh (no Docker)
 └── scripts/             # check-connections, lark-mcp, seed data, deploy helpers
 ```
 
@@ -75,10 +74,10 @@ marketing-linkbot/
 | Node.js 22 | ✅ installed via nvm (22.13.0), but **20.0.0 is active** | run `nvm use 22.13.0` (Node 20 is past end-of-life) |
 | Python 3 | ✅ (`py`) | only needed to test Edge TTS locally |
 | FFmpeg | ❌ | install (`winget install Gyan.FFmpeg`) for local video tests |
-| Docker Desktop | ❌ not installed | optional locally (needed only to test the full stack on this PC); required on the server |
+| Docker | not used | the server is set up natively (decided 24 Nov 2026) |
 
 ## 6. Decisions this proposal assumes
 
 - **n8n self-hosted on the DigitalOcean droplet** (free, next to the renderer). n8n Cloud remains possible, but the droplet is needed anyway.
 - **TypeScript** for all code; Python only for the Edge TTS command line.
-- Build order follows the spec phases. Phase 1 starts with the renderer skeleton and Docker Compose, which can be built and tested on this PC before the server is ready.
+- Build order follows the spec phases. Phase 1 starts with the renderer skeleton, which can be built and tested on this PC before the server is ready.

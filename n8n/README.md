@@ -4,14 +4,17 @@ n8n Cloud at `flow.linkbot.sg`. **The instance also runs client workflows.** The
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `[Marketing] W4 - Send approval card` | Every 10 minutes | Finds posts at `pending_approval` without a card. Sends the approver (Settings → `approver`) a Lark card with the preview, caption, checks and **Approve / Reject with feedback / Regenerate**. Saves `card_message_id` on the post. |
+| `[Marketing] W2 - Daily generation` | Every day at 17:00 SGT. **Off until the server is live.** | Calls the server's `POST /jobs/daily` (credential "[Marketing] Renderer API key"), which runs `deploy/run-daily.sh`. "Started" (202) or "already running" (409) is fine; anything else fails, so W11 alerts. |
+| `[Marketing] W4 - Send approval card` | Webhook called by the runner when a post is ready, plus an hourly backup run (at :05) | Finds posts at `pending_approval` without a card. Posts a Lark card to the approval group (Settings → `approval_chat`; or privately to the approver if empty) with the preview, caption, checks and **Approve / Reject with feedback / Regenerate**. Saves `card_message_id` on the post. |
 | `[Marketing] W5 - Handle approval` | Webhook (Lark card callback) | Answers Lark's URL check. Accepts a click only from the approver, only on the latest card, and only while the post is `pending_approval`. Approve sets `approved`. Reject (a reason is required) and Regenerate set `rejected` and save the reason. The card is replaced with the decision. |
+| `[Marketing] W7 - Deadline guard` | Every hour (at :35) | Posts past their `approval_deadline` that aren't approved (pending, planned, rejected or failed) become `skipped`. Their card is greyed out and the group is told. They're never published. |
+| `[Marketing] W11 - Error alerts` | n8n Error Trigger | Every other `[Marketing]` workflow names W11 as its error workflow. A failure posts the workflow, node and error to the alerts group (Settings → `alerts_chat`). |
 
 A rejected post is picked up by the next `npm run daily` in `runner/`, which rewrites it using the feedback and sends a new card.
 
 ## Files
 - `build.mjs` creates or updates the workflows through the n8n API, then saves a git-safe copy to `workflows/` with the secret webhook path replaced by `<N8N_WEBHOOK_SECRET>`.
-  Run `node n8n/build.mjs`; add `--activate W4 W5` to switch workflows on.
+  Run `node n8n/build.mjs`; add `--activate W11 W4 W5 W7` to switch workflows on. Workflows that are already live are re-published automatically. W11 must be live before the others can name it as their error workflow.
 - `api.mjs` is a small n8n API helper that reads `N8N_BASE_URL` and `N8N_API_KEY` from `.env`.
 - `.credential-ids.json` and `.callback-url.txt` are local and git-ignored.
 - The Lark app ID and secret live only in the n8n credential **[Marketing] Lark app (tenant token)** (Custom Auth), never in workflow JSON.

@@ -21,6 +21,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Thrown when the day's AI budget is used up. Not a content failure: the post stays `planned`. */
 export class QuotaExhaustedError extends Error {}
+/** Thrown when every model was busy or timing out (provider outage). Handled like the quota: stop, try again later. */
+export class AiUnavailableError extends QuotaExhaustedError {}
 
 export const callStats = { calls: 0 };
 
@@ -170,6 +172,10 @@ async function gemini<T>(req: AiRequest<T>): Promise<AiResult<T>> {
     await sleep(4000 * (round + 1)); // free tier is often busy; back off before the next round
   }
   if (models.every(isSpent)) throw new QuotaExhaustedError(`Today's free AI quota is used up.`);
+  // Nothing but busy / timeout / rate-limit answers: the provider is down, not the post's fault.
+  if (errors.length && errors.every((e) => /busy|timeout|aborted|rate limited|daily quota|fetch failed/i.test(e))) {
+    throw new AiUnavailableError(`Gemini is overloaded right now (busy or timing out on every model). The post was left as it was; try again later.`);
+  }
   throw new Error(`[${req.label}] AI failed after ${attempts} attempts: ${errors.slice(-6).join(' | ')}`);
 }
 

@@ -28,3 +28,7 @@ renderer/sandbox/
 runner/out/
 n8n/.credential-ids.json
 n8n/.callback-url.txt
+
+# Server state (droplet): logs and data
+logs/
+data/

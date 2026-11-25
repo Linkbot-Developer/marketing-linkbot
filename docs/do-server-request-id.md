@@ -12,7 +12,7 @@ Yang saya butuhkan:
 
 1. **Server DigitalOcean**
    - Pakai droplet yang sudah ada kalau masih ada kapasitas. Tapi kalau bisa, lebih baik **droplet baru khusus untuk ini**, biar terpisah dari sistem perusahaan yang lain dan lebih aman.
-   - Lokasi **Singapura (SGP1)**, minimal **2 vCPU / 4 GB RAM / 80 GB**, **Ubuntu 24.04**, sudah terpasang **Docker**.
+   - Lokasi **Singapura (SGP1)**, mulai **1 vCPU / 1 GB RAM** (+ swap 2 GB), **Ubuntu 24.04**, tanpa Docker (diinstal native lewat `deploy/server-setup.sh`). *(Update 24 Nov 2026)*
    - Tolong aktifkan **backup mingguan**.
 
 2. **Dua subdomain di linkbot.sg** (A record ke IP server):

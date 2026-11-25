@@ -9,9 +9,9 @@
 |---|---|
 | Droplet | Use the existing company droplet **if it has spare capacity**; otherwise a **new dedicated droplet** (preferred: isolates marketing tools from other company systems) |
 | Region | **SGP1 (Singapore)** |
-| Size | **Minimum 2 vCPU / 4 GB RAM / 80 GB SSD**. Recommended: 4 vCPU / 8 GB if video renders feel slow. |
+| Size | **1 vCPU / 1 GB RAM / 25 GB SSD to start** (with a 2 GB swap file). Resize to 1 vCPU / 2 GB if video renders struggle. *(Updated 24 Nov 2026.)* |
 | OS | **Ubuntu 24.04 LTS** |
-| Software | **Docker Engine + Docker Compose plugin** (we install everything else as containers) |
+| Software | Nothing pre-installed: `deploy/server-setup.sh` installs Node, PM2, Caddy, FFmpeg and the rest natively (no Docker). See `docs/deploy.md`. |
 | Backups | Enable **DigitalOcean weekly backups** (n8n's database holds the workflows and connection settings) |
 
 ## 2. Domain names (DNS on linkbot.sg)

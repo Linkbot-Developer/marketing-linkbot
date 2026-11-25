@@ -50,5 +50,5 @@ Long headlines shrink automatically to fit (`templates/brand/fit.js`). All AI- o
 ## Known limits
 - **AI images can still include unwanted details** (logos, clocks): FLUX ignores most "no…" instructions. The visual QC step (W3) must check every image and regenerate.
 - The Gemini free tier has no image quota, so Cloudflare FLUX is used first.
-- Fonts and GSAP load from Google Fonts / jsDelivr at render time. The Docker image should bundle them for offline reliability.
+- Fonts and GSAP load from Google Fonts / jsDelivr at render time. The server needs internet access for them.
 - `/media/<token>` (expiring public links for Instagram) and Lark Drive upload come in phase 3.

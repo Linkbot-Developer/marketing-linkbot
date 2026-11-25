@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The daily runner on the droplet (runner/README.md: npm run daily).
-# Cron calls this every hour; it only runs at 17:00 Singapore time, an hour after the Gemini free quota resets
-# (midnight US Pacific ≈ 16:00 SGT). Run it by hand any time with FORCE=1 deploy/run-daily.sh
+# Started by n8n (W2 - Daily generation → renderer POST /jobs/daily, which sets FORCE=1) at 17:00 Singapore time,
+# an hour after the Gemini free quota resets (midnight US Pacific ≈ 16:00 SGT). No server cron is used.
+# Without FORCE=1 it only acts during the 17:00 hour. Run it by hand any time with FORCE=1 deploy/run-daily.sh
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"

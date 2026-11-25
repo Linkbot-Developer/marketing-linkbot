@@ -1,0 +1,161 @@
+{
+  "name": "[Marketing] W11 - Error alerts",
+  "nodes": [
+    {
+      "id": "01-a-marketing-workflow-failed",
+      "name": "A marketing workflow failed",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "02-lark-token",
+      "name": "Lark token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "XG0w1tH8E3yi3hwH",
+          "name": "[Marketing] Lark app (tenant token)"
+        }
+      }
+    },
+    {
+      "id": "03-read-settings",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/bitable/v1/apps/UnVYbyvm2anu0dsmiQ1lGpcsgRh/tables/tbl1qgo2zdmi4cfY/records/search?page_size=100",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      }
+    },
+    {
+      "id": "04-write-the-alert",
+      "name": "Write the alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst flat = (v) => Array.isArray(v) ? v.map((s) => s.text ?? s).join('') : v;\nconst settings = {};\nfor (const r of $('Read settings').first().json.data.items ?? []) {\n  const raw = String(flat(r.fields.value) ?? '');\n  try { settings[flat(r.fields.setting)] = JSON.parse(raw); } catch { settings[flat(r.fields.setting)] = raw; }\n}\nconst e = $('A marketing workflow failed').first().json;\nconst chat = settings.alerts_chat?.chat_id;\nif (!chat) throw new Error('Settings row \"alerts_chat\" has no chat_id');\nconst msg = String(e.execution?.error?.message ?? 'Unknown error').replace(/t-[A-Za-z0-9]{20,}/g, '[token]').slice(0, 400);\nconst text = '⚠️ ' + (e.workflow?.name ?? 'A marketing workflow') + ' failed'\n  + (e.execution?.lastNodeExecuted ? ' at \"' + e.execution.lastNodeExecuted + '\"' : '') + '.\\n' + msg\n  + (e.execution?.url ? '\\nDetails: ' + e.execution.url : '');\nreturn [{ json: { chat, text } }];"
+      }
+    },
+    {
+      "id": "05-post-to-the-alerts-group",
+      "name": "Post to the alerts group",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Lark token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {},
+        "method": "POST",
+        "url": "https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type=chat_id",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ receive_id: $json.chat, msg_type: \"text\", content: JSON.stringify({ text: $json.text }) }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "A marketing workflow failed": {
+      "main": [
+        [
+          {
+            "node": "Lark token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lark token": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Write the alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write the alert": {
+      "main": [
+        [
+          {
+            "node": "Post to the alerts group",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Singapore",
+    "saveManualExecutions": true
+  }
+}

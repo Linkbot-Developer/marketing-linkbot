@@ -95,3 +95,14 @@ export async function readSettings(): Promise<Record<string, any>> {
     return [String(r.fields.setting), value];
   }));
 }
+
+/** Post a plain-text alert to the alerts group (Settings: alerts_chat). Never throws: alerts must not break a run. */
+export async function sendAlert(text: string): Promise<void> {
+  try {
+    const chat = (await readSettings()).alerts_chat?.chat_id;
+    if (!chat) return;
+    await call('POST', '/im/v1/messages?receive_id_type=chat_id', { receive_id: chat, msg_type: 'text', content: JSON.stringify({ text: text.slice(0, 1500) }) });
+  } catch (e) {
+    console.error(`(alert not sent: ${(e as Error).message})`);
+  }
+}

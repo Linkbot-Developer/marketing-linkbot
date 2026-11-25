@@ -76,4 +76,4 @@ I can walk you through step 4 live in the browser when you get there.
 
 ## G. DigitalOcean server (ask IT)
 Send IT this request:
-> For the marketing automation we need: (1) access to the DigitalOcean droplet, or a new one: Ubuntu 24.04, at least 2 vCPU / 4 GB RAM, with Docker; (2) two DNS records on linkbot.sg: `n8n.linkbot.sg` and `renderer.linkbot.sg` pointing to the droplet; (3) SSH access for setup.
+> For the marketing automation we need: (1) access to the DigitalOcean droplet, or a new one: Ubuntu 24.04, 1 vCPU / 1 GB RAM to start, set up natively without Docker (see `docs/deploy.md`); (2) two DNS records on linkbot.sg: `n8n.linkbot.sg` and `renderer.linkbot.sg` pointing to the droplet; (3) SSH access for setup.

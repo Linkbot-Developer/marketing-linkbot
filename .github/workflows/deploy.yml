@@ -149,11 +149,14 @@ jobs:
 
             # Chromium for Playwright: a no-op when this version is already installed
             (cd renderer && npx playwright install chromium)
+            # Chrome for HyperFrames (Reels/TikTok video): a no-op when it's already downloaded
+            node renderer/node_modules/hyperframes/bin/hyperframes.mjs browser ensure
 
             echo "Restarting the renderer..."
             pm2 startOrReload deploy/ecosystem.config.cjs --update-env
             pm2 save
 
+            # Not used: n8n W2 starts the daily run (renderer POST /jobs/daily → deploy/run-daily.sh). Kept for reference.
             # the daily runner: one hourly cron entry; run-daily.sh only acts at 17:00 Singapore time.
             # Left alone when it's already there; otherwise any older run-daily.sh entry is replaced, never added to.
             #CRON_LINE="5 * * * * $APP_DIR/deploy/run-daily.sh >> $APP_DIR/logs/runner.log 2>&1"
