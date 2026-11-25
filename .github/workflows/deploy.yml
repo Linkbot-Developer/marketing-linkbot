@@ -152,7 +152,17 @@ jobs:
 
             # Chromium for Playwright: a no-op when this version is already installed
             (cd renderer && npx playwright install chromium)
-            # Chrome for HyperFrames (Reels/TikTok video): a no-op when it's already downloaded
+            # Chrome for HyperFrames (Reels/TikTok video): a no-op when it's already downloaded.
+            # HyperFrames refuses a cache that other users can write to (the server's ~/.cache is group-writable),
+            # so it gets its own private cache in data/ (kept across deploys). The renderer uses the same path
+            # (deploy/ecosystem.config.cjs). Every parent folder must be private too.
+            export HYPERFRAMES_CACHE_DIR="$APP_DIR/data/hyperframes-cache"
+            mkdir -p "$HYPERFRAMES_CACHE_DIR"
+            chmod 700 "$HYPERFRAMES_CACHE_DIR"
+            chmod go-w "$APP_DIR" "$APP_DIR/data" || {
+              echo "::error::Could not make $APP_DIR and $APP_DIR/data private (chmod go-w). They must be owned by the deploy user."
+              exit 1
+            }
             node renderer/node_modules/hyperframes/bin/hyperframes.mjs browser ensure
 
             echo "Restarting the renderer..."

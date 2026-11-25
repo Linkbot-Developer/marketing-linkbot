@@ -25,6 +25,8 @@ module.exports = {
         RENDERER_OUTPUT_DIR: path.join(APP_DIR, 'data', 'renderer-jobs'),
         // edge-tts is installed with pipx into ~/.local/bin
         PATH: `${HOME}/.local/bin:${process.env.PATH}`,
+        // HyperFrames' Chrome lives in a private cache (the deploy workflow creates it and runs `browser ensure`)
+        HYPERFRAMES_CACHE_DIR: path.join(APP_DIR, 'data', 'hyperframes-cache'),
       },
     },
   ],
