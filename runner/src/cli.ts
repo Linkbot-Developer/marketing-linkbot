@@ -4,7 +4,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { processPost } from './pipeline.js';
-import { AiUnavailableError, callStats, quota, QuotaExhaustedError, remainingCallsToday, usageToday } from './ai.js';
+import { AiUnavailableError, callStats, fallback, fallbackCallsLeft, quota, QuotaExhaustedError, remainingCallsToday, usageToday } from './ai.js';
 import { readSettings, searchRecords, sendAlert, updateRecord } from './lark.js';
 import { REPO_DIR, env, required } from './env.js';
 
@@ -25,6 +25,15 @@ if (settings.agent_switches?.generator === false) {
 const maxAttempts = Number(settings.max_generation_attempts ?? 3);
 const q = settings.ai_quota ?? {};
 quota.perModelPerDay = Number(q.requests_per_model_per_day ?? 20);
+quota.perModel = Object.fromEntries(Object.entries(q.per_model ?? {}).map(([m, n]) => [m, Number(n)]));
+// Free backup when Gemini runs out or is overloaded (Settings ai_text.fallback).
+const fb = settings.ai_text?.fallback ?? {};
+fallback.enabled = fb.enabled !== false;
+if (Array.isArray(fb.models) && fb.models.length) fallback.models = fb.models;
+if (Array.isArray(fb.vision_models) && fb.vision_models.length) fallback.vision = fb.vision_models;
+if (Array.isArray(fb.writer_models) && fb.writer_models.length) fallback.writers = fb.writer_models;
+if (fb.max_neurons_per_day) fallback.maxNeuronsPerDay = Number(fb.max_neurons_per_day);
+if (fb.neurons_per_call_estimate) fallback.neuronsPerCall = Number(fb.neurons_per_call_estimate);
 const perPost = Number(q.calls_per_post_estimate ?? 5);
 const reserve = Number(q.reserve_calls ?? 4);
 const daysAhead = Number(q.generate_days_ahead ?? 14);
@@ -63,7 +72,8 @@ records = records.slice(0, limit);
 
 if (Number.isFinite(remaining)) {
   const u = usageToday();
-  console.log(`AI quota today (${u.day}, US Pacific): ${u.capacity - remaining}/${u.capacity} requests used · room for about ${affordable} post(s) at ~${perPost} each`);
+  const backup = fallbackCallsLeft();
+  console.log(`AI quota today (${u.day}, US Pacific): Gemini ${Math.max(0, u.capacity - (remaining - backup))}/${u.capacity} requests used · Cloudflare backup ${fallback.enabled ? `on, ~${backup} calls left` : 'off'} · room for about ${affordable} post(s) at ~${perPost} each`);
   // Does the weekly plan fit the free tier?
   const weekly = Object.values(settings.posts_per_week ?? {}).reduce((s: number, n) => s + Number(n), 0) as number;
   const weeklyNeed = weekly * perPost;
@@ -117,7 +127,10 @@ try {
       if (e instanceof QuotaExhaustedError) {
         summary.push(`⏸ ${id}: left as it was (${e instanceof AiUnavailableError ? 'AI provider overloaded' : 'AI quota used up'})`, `⏸ Stopped: ${e.message}`);
         const waiting = records.length - records.indexOf(rec);
-        if (late.length) problems.push(`AI quota ran out with ${waiting} post(s) still waiting, including some close to their approval deadline (${late.map((r) => r.fields.post_id).join(', ')}).`);
+        const why = e instanceof AiUnavailableError
+          ? 'Gemini (the free text AI) was overloaded, so the run stopped early'
+          : 'the free Gemini text quota for today ran out';
+        if (late.length) problems.push(`${why}. ${waiting} post(s) are still waiting, including some close to their approval deadline (${late.map((r) => r.fields.post_id).join(', ')}). The next run continues automatically.`);
         break;
       }
       problems.push(`${id}: the runner crashed (${(e as Error).message.slice(0, 300)}).`);
