@@ -291,3 +291,8 @@ Build one phase at a time, each working end to end. At the end of each: how to t
   - Daily generation runs from a Windows scheduled task (16:30 PC time) until the renderer is on the server.
   - Image prompts no longer mention clocks at all: FLUX draws whatever is named, even after "no".
   - **Deployment decided (PR #1 by the supervisor):** no Docker. The droplet runs Node 22 + PM2 (renderer) and Caddy (HTTPS); n8n W2 starts the daily runner at 17:00 SGT through `POST /jobs/daily` (no server cron), with a 2 GB swap file. GitHub Actions tests, bundles and deploys on every push to `main`, so the server never builds. Start at 1 vCPU / 1 GB and resize to 2 GB only if video renders struggle.
+- **26 Nov 2026:**
+  - Gemini Flash-Lite (`gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`) added as fallback models: about 120 free text requests a day.
+  - **Free backup AI:** Cloudflare Workers AI takes over when Gemini is used up or overloaded (Llama 4 Scout writes, GPT-OSS 120B checks, Mistral Small sees images), capped at 6,000 of the 10,000 free daily neurons to protect image generation. Backup-made posts are flagged on the approval card.
+  - Headings are sentence-cased and Markdown links removed automatically, whichever AI writes.
+  - Daily generation moved to the server (n8n W2 on, PC task off).

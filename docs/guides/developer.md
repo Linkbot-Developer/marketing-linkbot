@@ -35,8 +35,9 @@ Statuses (field `status` in Content):
 5. Upload the previews to the Base, set `pending_approval`, and call the **W4 webhook** so the card goes out at once.
 
 **Free-quota planning:**
-- The Gemini free tier allows 20 requests per model per day; with 4 models that's about 80. It resets at midnight US Pacific time.
+- The Gemini free tier allows 20 requests per model per day; with 6 models (4 Flash, then 2 Flash-Lite fallbacks) that's about 120. Per-model limits can be overridden in Settings `ai_quota.per_model`. It resets at midnight US Pacific time.
 - `runner/out/ai-usage.json` counts the calls. Each run takes only as many posts as fit: (requests left − reserve) ÷ about 5.
+- **Free backup:** when every Gemini model is used up or overloaded, Cloudflare Workers AI takes over (Llama 4 Scout writes, GPT-OSS 120B brand-checks, Mistral Small / Llama 4 Scout do the visual check), within 6,000 of Cloudflare's 10,000 free daily neurons. Posts made by the backup are flagged on their card. Settings `ai_text.fallback`.
 - Settings row `ai_quota` controls this. The weekly plan of 11 posts needs about 55 requests, against about 530 a week.
 
 ## n8n workflows

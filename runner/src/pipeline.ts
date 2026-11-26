@@ -120,6 +120,33 @@ async function render(postId: string, spec: RenderSpec): Promise<RenderedFile[]>
   return files;
 }
 
+// Names and acronyms that stay capitalised in sentence-case headings.
+const KEEP_CASE = new Set(['Linkbot', 'Lark', 'HubSpot', 'WhatsApp', 'Telegram', 'SendPulse', 'ChatGPT', 'Singapore', 'LinkedIn',
+  'Instagram', 'Facebook', 'TikTok', 'Google', 'Excel', 'Microsoft', 'I', 'S.O.A.R.',
+  'Base', 'Suite']); // as in "Lark Base", "Lark Suite"
+/** "Streamline Your Workflow With AI" → "Streamline your workflow with AI" (acronyms and names kept). */
+export function sentenceCase(text: string): string {
+  let first = true;
+  return text.replace(/[A-Za-z0-9][\w'’.-]*/g, (w) => {
+    const bare = w.replace(/[.'’-]+$/, '');
+    let out = w;
+    if (!first && !KEEP_CASE.has(bare) && !/^[A-Z0-9]{2,}s?$/.test(bare) && /^[A-Z][a-z'’-]*$/.test(bare)) out = w.charAt(0).toLowerCase() + w.slice(1);
+    first = false;
+    return out;
+  });
+}
+/**
+ * Deterministic tidy-up of the Copywriter's output, whichever AI wrote it: sentence-case headings (brand rule)
+ * and plain URLs instead of Markdown links (social platforms show the brackets).
+ */
+export function tidyCopy(copy: { caption: string; render: any }) {
+  copy.caption = copy.caption.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_m, text, url) => (text === url || /^https?:/.test(text) ? url : `${text} ${url}`));
+  const r = copy.render ?? {};
+  if (typeof r.headline === 'string') r.headline = sentenceCase(r.headline);
+  for (const sl of r.slides ?? []) if (typeof sl.heading === 'string') sl.heading = sentenceCase(sl.heading);
+  for (const sc of r.scenes ?? []) if (typeof sc.title === 'string') sc.title = sentenceCase(sc.title);
+}
+
 export async function processPost(rec: BaseRecord, opts: RunOptions): Promise<'pending_approval' | 'failed'> {
   const table = required('LARK_TABLE_CONTENT_ID');
   const f = rec.fields;
@@ -146,6 +173,7 @@ export async function processPost(rec: BaseRecord, opts: RunOptions): Promise<'p
         user: `Write this post. Include the "render" spec for its format.\n\n${JSON.stringify({ ...plan, reviewer_feedback: feedback }, null, 2)}`,
       });
 
+      tidyCopy(copy.data);
       writeFileSync(path.join(outDir, `a${attempt}_copy.json`), JSON.stringify(copy.data, null, 2));
 
       // 2a. Fixed banned-phrase check (cheap, never misses)
@@ -206,6 +234,9 @@ export async function processPost(rec: BaseRecord, opts: RunOptions): Promise<'p
         ? `${copy.data.caption}\n\n[POLL] ${copy.data.poll.question}\n${copy.data.poll.options.map((o) => `• ${o}`).join('\n')}`
         : copy.data.caption;
       const qcNotes = [
+        copy.provider === 'cloudflare' || check.provider === 'cloudflare'
+          ? '⚠ Written or checked by the backup AI (Cloudflare) because Gemini was unavailable. Its checks are less strict, so read this one carefully.'
+          : '',
         `Brand check: PASS. ${check.data.summary}`,
         warns.length ? `Warnings: ${warns.join('; ')}` : '',
         `Visual QC: ${qcSummary}`,

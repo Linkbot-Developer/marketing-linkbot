@@ -1,5 +1,7 @@
 // Text + vision AI with structured JSON output, schema validation, retries and model fallback.
 // Provider is switchable (AI_TEXT_PROVIDER): "gemini" (free tier, default for now) or "claude" (paid, API key in .env).
+// Backup: when every Gemini model is used up or overloaded, Cloudflare Workers AI (free, same account as the images)
+// takes over, within a daily "neurons" budget that leaves room for image generation (Settings ai_text.fallback).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import Anthropic from '@anthropic-ai/sdk';
@@ -36,7 +38,9 @@ interface Ledger { day: string; calls: Record<string, number>; exhausted: string
 export const quotaDay = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
 
 /** Per-model daily request cap (free tier: 20). Set from Lark Settings `ai_quota.requests_per_model_per_day`. */
-export const quota = { perModelPerDay: 20 };
+export const quota = { perModelPerDay: 20, perModel: {} as Record<string, number> };
+/** A model's daily cap: Settings `ai_quota.per_model[model]`, else `requests_per_model_per_day`. */
+const cap = (model: string) => quota.perModel[model] ?? quota.perModelPerDay;
 
 function loadLedger(): Ledger {
   const fresh: Ledger = { day: quotaDay(), calls: {}, exhausted: [] };
@@ -68,7 +72,7 @@ function markExhausted(model: string) {
 }
 const isSpent = (model: string) => {
   const l = ledgerNow();
-  return l.exhausted.includes(model) || (l.calls[model] ?? 0) >= quota.perModelPerDay;
+  return l.exhausted.includes(model) || (l.calls[model] ?? 0) >= cap(model);
 };
 
 const geminiModels = () => (env.GEMINI_TEXT_MODELS ?? 'gemini-3.5-flash').split(',').map((m) => m.trim()).filter(Boolean);
@@ -77,17 +81,28 @@ const geminiModels = () => (env.GEMINI_TEXT_MODELS ?? 'gemini-3.5-flash').split(
 export function remainingCallsToday(): number {
   if (provider() !== 'gemini') return Infinity;
   const l = ledgerNow();
-  return geminiModels().reduce((sum, m) =>
-    sum + (l.exhausted.includes(m) ? 0 : Math.max(0, quota.perModelPerDay - (l.calls[m] ?? 0))), 0);
+  const gem = geminiModels().reduce((sum, m) =>
+    sum + (l.exhausted.includes(m) ? 0 : Math.max(0, cap(m) - (l.calls[m] ?? 0))), 0);
+  return gem + fallbackCallsLeft();
 }
-export function usageToday() { return { ...ledgerNow(), capacity: geminiModels().length * quota.perModelPerDay }; }
+export function usageToday() { return { ...ledgerNow(), capacity: geminiModels().reduce((sum, m) => sum + cap(m), 0) }; }
 
 // ---------------------------------------------------------------------------
 const provider = () => (env.AI_TEXT_PROVIDER ?? 'gemini').toLowerCase();
 
 export async function generateJson<T>(req: AiRequest<T>): Promise<AiResult<T>> {
   const p = provider();
-  if (p === 'gemini') return gemini(req);
+  if (p === 'gemini') {
+    // Testing only: AI_FORCE_BACKUP=1 skips Gemini so the Cloudflare backup can be checked end to end.
+    if (env.AI_FORCE_BACKUP === '1') return cloudflare(req, new QuotaExhaustedError('forced for testing'));
+    try {
+      return await gemini(req);
+    } catch (e) {
+      // Gemini used up or overloaded: hand over to the free Cloudflare backup, if it's on and has budget left.
+      if (e instanceof QuotaExhaustedError && fallbackCallsLeft() > 0) return cloudflare(req, e);
+      throw e;
+    }
+  }
   if (p === 'claude') return claude(req);
   throw new Error(`Unknown AI_TEXT_PROVIDER "${p}"`);
 }
@@ -117,7 +132,7 @@ async function gemini<T>(req: AiRequest<T>): Promise<AiResult<T>> {
   // Up to 3 rounds through the model list; a schema failure is fed back to the model on the next try.
   for (let round = 0; round < 3; round++) {
     if (models.every(isSpent)) {
-      throw new QuotaExhaustedError(`Today's free AI quota is used up (${models.length} models × ${quota.perModelPerDay}). It resets at midnight US Pacific time.`);
+      throw new QuotaExhaustedError(`Today's free AI quota is used up (${models.length} models). It resets at midnight US Pacific time.`);
     }
     for (const model of models) {
       if (isSpent(model)) continue;
@@ -214,4 +229,106 @@ async function claude<T>(req: AiRequest<T>): Promise<AiResult<T>> {
     feedback = r.feedback;
   }
   throw new Error(`[${req.label}] Claude failed after 3 attempts: ${errors.join(' | ')}`);
+}
+
+// ---------------------------------------------------------------------------
+// Cloudflare Workers AI backup (free daily allowance of 10,000 "neurons", shared with FLUX images).
+// Settings ai_text.fallback: { enabled, models, max_neurons_per_day, neurons_per_call_estimate }.
+// Its allowance resets at 00:00 UTC, so it has its own small ledger.
+export const fallback = {
+  enabled: true,
+  /** Text calls (writing, brand check): the strongest reasoner first. */
+  models: ['@cf/openai/gpt-oss-120b', '@cf/meta/llama-4-scout-17b-16e-instruct'],
+  /** Writing (Copywriter): the model that writes cleaner, less salesy copy. GPT-OSS then checks it strictly. */
+  writers: ['@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/openai/gpt-oss-120b'],
+  /** Calls with images (visual check): only models that can see. */
+  vision: ['@cf/mistralai/mistral-small-3.1-24b-instruct', '@cf/meta/llama-4-scout-17b-16e-instruct'],
+  maxNeuronsPerDay: 6000,   // keeps about 4,000 of the 10,000 free neurons for FLUX images
+  neuronsPerCall: 300,      // rough cost of one agent call with our prompts (used for planning only)
+};
+const CF_LEDGER = path.join(RUNNER_DIR, 'out', 'cf-usage.json');
+interface CfLedger { day: string; neurons: number; calls: number; exhausted: boolean }
+const utcDay = () => new Date().toISOString().slice(0, 10);
+function cfLedger(): CfLedger {
+  const fresh: CfLedger = { day: utcDay(), neurons: 0, calls: 0, exhausted: false };
+  try {
+    const l = JSON.parse(readFileSync(CF_LEDGER, 'utf8')) as CfLedger;
+    return l.day === fresh.day ? l : fresh;
+  } catch { return fresh; }
+}
+function saveCf(l: CfLedger) {
+  mkdirSync(path.dirname(CF_LEDGER), { recursive: true });
+  writeFileSync(CF_LEDGER, JSON.stringify(l, null, 2));
+}
+export function fallbackCallsLeft(): number {
+  if (!fallback.enabled || !env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_API_TOKEN) return 0;
+  const l = cfLedger();
+  if (l.exhausted) return 0;
+  return Math.max(0, Math.floor((fallback.maxNeuronsPerDay - l.neurons) / fallback.neuronsPerCall));
+}
+export const fallbackUsage = () => cfLedger();
+
+async function cloudflare<T>(req: AiRequest<T>, cause: Error): Promise<AiResult<T>> {
+  const url = `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`;
+  const models = req.images?.length ? fallback.vision : req.label.startsWith('copywriter') ? fallback.writers : fallback.models;
+  if (!models.length) throw cause;
+  const errors: string[] = [];
+  let feedback = '';
+  let attempts = 0;
+  for (let round = 0; round < 2; round++) {
+    for (const model of models) {
+      const l = cfLedger();
+      if (l.exhausted || l.neurons >= fallback.maxNeuronsPerDay) {
+        throw new QuotaExhaustedError(`Gemini stopped (${cause.message.split('.')[0]}) and today's Cloudflare backup budget is used up too. The next run continues.`);
+      }
+      attempts++;
+      callStats.calls++;
+      const content: unknown = req.images?.length
+        ? [{ type: 'text', text: req.user + feedback }, ...req.images.map((img) => ({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.data.toString('base64')}` } }))]
+        : req.user + feedback;
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'system', content: req.system }, { role: 'user', content }],
+            response_format: { type: 'json_object' },
+            temperature: req.temperature ?? 0.4,
+            max_tokens: 8000,
+          }),
+          signal: AbortSignal.timeout(180_000),
+        });
+      } catch (e) {
+        errors.push(`${model}: ${(e as Error).message}`);
+        continue;
+      }
+      const body = (await res.json().catch(() => ({}))) as any;
+      const used = Number(body.usage?.neurons ?? fallback.neuronsPerCall);
+      const after = cfLedger();
+      after.neurons += res.ok ? used : 0;
+      after.calls += 1;
+      const errText = JSON.stringify(body.errors ?? body.error ?? '');
+      if (res.status === 429 || /neuron|daily|limit/i.test(errText) && !res.ok) {
+        after.exhausted = true;
+        saveCf(after);
+        throw new QuotaExhaustedError(`Gemini stopped and Cloudflare's free daily AI allowance is used up. The next run continues.`);
+      }
+      saveCf(after);
+      if (!res.ok) {
+        errors.push(`${model}: HTTP ${res.status} ${errText.slice(0, 120)}`);
+        continue;
+      }
+      const text: string = body.choices?.[0]?.message?.content ?? '';
+      const r = parseAndValidate(typeof text === 'string' ? text : JSON.stringify(text), req.schema);
+      if (r.ok) return { data: r.data, model, provider: 'cloudflare', attempts };
+      errors.push(`${model}: ${r.error}`);
+      feedback = r.feedback;
+    }
+  }
+  if (errors.every((e) => /HTTP 5\d\d|timeout|aborted|fetch failed/i.test(e))) {
+    throw new AiUnavailableError(`Gemini stopped and the Cloudflare backup is unavailable right now. The next run continues.`);
+  }
+  throw new Error(`[${req.label}] AI failed after ${attempts} backup attempts: ${errors.slice(-4).join(' | ')}`);
 }
